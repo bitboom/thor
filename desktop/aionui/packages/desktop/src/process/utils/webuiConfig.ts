@@ -18,6 +18,12 @@ const DESKTOP_WEBUI_ENABLED_KEY = 'webui.desktop.enabled';
 const DESKTOP_WEBUI_ALLOW_REMOTE_KEY = 'webui.desktop.allowRemote';
 const DESKTOP_WEBUI_PORT_KEY = 'webui.desktop.port';
 
+export function assertDesktopWebUIAvailable(): void {
+  throw new Error(
+    'Desktop WebUI is unavailable while Thor uses a private local Core. Use the desktop app, or start a separate Core in WebUI mode with its own authentication and data directory.'
+  );
+}
+
 /**
  * Read WebUI preferences from the backend's /api/settings/client store.
  *
@@ -216,6 +222,9 @@ const toDesktopHandle = (handle: WebHostHandle, allowRemote: boolean): DesktopWe
  * Settings → "Enable WebUI" IPC handler.
  */
 export async function startDesktopWebUI(opts: { port?: number; allowRemote?: boolean }): Promise<DesktopWebUIHandle> {
+  // The existing desktop proxy has no independent browser authentication.
+  // Never forward the main-process capability through it to browser clients.
+  assertDesktopWebUIAvailable();
   // If already running, tear down first so we honour the new port / allowRemote.
   if (currentHandle) {
     await stopDesktopWebUI();

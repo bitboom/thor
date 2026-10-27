@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { root, readJson, describeFile, digest, treeDigest, validateBundleProvenance } from './artifact-lib.mjs';
 import { downloadVerifiedFile } from '../agent/tools/prepare-officecli.mjs';
+import { validateCoreBoundaryProof } from './local-boundary-policy.mjs';
 
 if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('Thor release builds require Windows x64.');
 const lock = readJson(path.join(root, 'upstream.lock.json'));
@@ -77,6 +78,10 @@ for (const file of ['memory-store.mjs', 'tools/memory.mjs']) {
   copyFileSync(path.join(root, 'agent', file), path.join(managed, 'thor-agent', file));
 }
 run(process.execPath, ['release/verify-officecli-readonly.mjs', '--bundle', bundle, '--lock', officeLockPath, '--workspace', path.join(work, 'readonly-watch-verification')]);
+const coreBoundaryEvidence = path.join(work, 'core-local-boundary.json');
+run(process.execPath, ['release/verify-core-local-boundary.mjs', '--bundle', bundle, '--workspace', path.join(work, 'local-boundary-verification'), '--evidence', coreBoundaryEvidence]);
+const core = describeFile(bundle, 'aioncore.exe');
+const localBoundary = validateCoreBoundaryProof(readJson(coreBoundaryEvidence), core.sha256);
 
 const githubExtract = path.join(work, 'github-cli');
 await prepareArchive(lock.githubCli, githubExtract);
@@ -85,7 +90,7 @@ if (githubCli.sha256 !== lock.githubCli.executableSha256) throw new Error('GitHu
 
 const provenance = {
   schemaVersion: 1, runtimeKey: 'win32-x64',
-  core: { ...describeFile(bundle, 'aioncore.exe'), source: 'host/aioncore', officeCliLockSha256: officeLockSha256 },
+  core: { ...core, source: 'host/aioncore', officeCliLockSha256: officeLockSha256, localBoundary },
   node: { ...node, version: lock.managedNode.version, archiveSha256: lock.managedNode.sha256 },
   officeCli: { ...officeFile, version: office.version, readOnlyWatch: true, source: officeAsset.source, lockSha256: officeLockSha256 },
   managedResourcesSha256: treeDigest(managed),

@@ -72,24 +72,28 @@ describe('release packaging configuration', () => {
     expect(script).toMatch(/--mac\s+dmg\s+zip\s+--\$\{targetArch\}\s+--prepackaged/);
   });
 
-  itWithBash('fails release asset preparation when a mac zip is missing', () => {
-    const tempDir = mkdtempSync(resolve(tmpdir(), 'aionui-release-assets-'));
-    const artifactsDir = resolve(tempDir, 'build-artifacts');
-    const outputDir = resolve(tempDir, 'release-assets');
+  itWithBash(
+    'fails release asset preparation when a mac zip is missing',
+    () => {
+      const tempDir = mkdtempSync(resolve(tmpdir(), 'aionui-release-assets-'));
+      const artifactsDir = resolve(tempDir, 'build-artifacts');
+      const outputDir = resolve(tempDir, 'release-assets');
 
-    try {
-      const env = { ...process.env, MOCK_VERSION: '1.0.0' };
-      const createResult = runFixtureScript('scripts/create-mock-release-artifacts.sh', [artifactsDir], env);
-      expect(createResult.status).toBe(0);
+      try {
+        const env = { ...process.env, MOCK_VERSION: '1.0.0' };
+        const createResult = runFixtureScript('scripts/create-mock-release-artifacts.sh', [artifactsDir], env);
+        expect(createResult.status).toBe(0);
 
-      rmSync(resolve(artifactsDir, 'macos-build-arm64', 'AionUi-1.0.0-mac-arm64.zip'), { force: true });
+        rmSync(resolve(artifactsDir, 'macos-build-arm64', 'AionUi-1.0.0-mac-arm64.zip'), { force: true });
 
-      const prepareResult = runFixtureScript('scripts/prepare-release-assets.sh', [artifactsDir, outputDir], env);
+        const prepareResult = runFixtureScript('scripts/prepare-release-assets.sh', [artifactsDir, outputDir], env);
 
-      expect(prepareResult.status).not.toBe(0);
-      expect(`${prepareResult.stdout}\n${prepareResult.stderr}`).toContain('Missing macOS zip artifact');
-    } finally {
-      rmSync(tempDir, { force: true, recursive: true });
-    }
-  });
+        expect(prepareResult.status).not.toBe(0);
+        expect(`${prepareResult.stdout}\n${prepareResult.stderr}`).toContain('Missing macOS zip artifact');
+      } finally {
+        rmSync(tempDir, { force: true, recursive: true });
+      }
+    },
+    30000
+  ); // WSL startup can exceed Vitest's default under concurrent release builds.
 });

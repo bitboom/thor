@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { root, readJson, describeFile, digest, treeDigest, readUpdateManifest, validateUpdateManifest, verifyRelease } from './artifact-lib.mjs';
+import { root, readJson, describeFile, digest, treeDigest, readUpdateManifest, validateUpdateManifest, validateBundleProvenance, verifyRelease } from './artifact-lib.mjs';
 import { stageResources, sourceProvenance } from './stage-resources.mjs';
 
 if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('Windows x64 packaging requires Windows x64.');
@@ -10,11 +10,17 @@ const pkg = readJson(path.join(root, 'desktop/aionui/package.json'));
 const workspacePackage = readJson(path.join(root, 'package.json'));
 if (workspacePackage.version !== pkg.version) throw new Error('Workspace and desktop versions must match.');
 if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== `v${pkg.version}`) throw new Error('Release tag does not match package version.');
-execFileSync(process.execPath, ['release/build-host.mjs'], { cwd: root, stdio: 'inherit' });
+if (process.env.THOR_REUSE_VERIFIED_HOST !== '1') execFileSync(process.execPath, ['release/build-host.mjs'], { cwd: root, stdio: 'inherit' });
 const work = path.join(root, '.thor-local/release');
 const bundle = readJson(path.join(work, 'bundle-provenance.json'));
+validateBundleProvenance(bundle, lock);
+for (const component of [bundle.core, bundle.node, bundle.officeCli]) {
+  if (describeFile(path.join(work, 'bundle'), component.file).sha256 !== component.sha256) throw new Error('Host bundle changed after verification.');
+}
+if (treeDigest(path.join(work, 'bundle/managed-resources')) !== bundle.managedResourcesSha256) throw new Error('Managed resources changed after verification.');
 const source = sourceProvenance();
 const staged = stageResources(bundle, source);
+execFileSync(process.execPath, ['release/native-desktop.mjs', 'rebuild'], { cwd: root, stdio: 'inherit' });
 execFileSync(process.execPath, ['scripts/build-with-builder.js', 'x64', '--win', '--x64'], {
   cwd: path.join(root, 'desktop/aionui'),
   stdio: 'inherit',
@@ -66,6 +72,7 @@ const provenance = {
   runUrl: process.env.GITHUB_RUN_ID ? `https://github.com/bitboom/thor/actions/runs/${process.env.GITHUB_RUN_ID}` : null,
   platform: 'windows-x64', authenticode: 'unsigned-preview', upstream: lock,
   bundle, tools: staged.tools, hub, artifacts: names.sort().map(file => describeFile(output, file)),
+  desktopNative: readJson(path.join(work, 'native-desktop.json')),
 };
 writeFileSync(path.join(output, 'thor-build.json'), JSON.stringify(provenance, null, 2) + '\n');
 writeFileSync(path.join(output, 'SHA256SUMS.txt'), [...names, 'thor-build.json'].sort().map(file => `${describeFile(output, file).sha256}  ${file}`).join('\n') + '\n');

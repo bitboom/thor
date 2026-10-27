@@ -1146,12 +1146,14 @@ pub async fn build_extension_states(
 /// no-op router for router-only/test assembly.
 pub fn build_ws_state(services: &AppServices, router: Arc<dyn MessageRouter>) -> WsHandlerState {
     if services.local {
+        let validator = services.local_channel.clone();
+        let extractor = services.local_channel.clone();
         return WsHandlerState {
             manager: services.ws_manager.clone(),
             router,
-            token_validator: Arc::new(|_| true),
+            token_validator: Arc::new(move |token| validator.valid_token(token)),
             token_user_resolver: Arc::new(|_| Box::pin(async { Some("system_default_user".to_owned()) })),
-            token_extractor: Arc::new(|_| Some("local".into())),
+            token_extractor: Arc::new(move |headers| extractor.token_from_headers(headers)),
         };
     }
 

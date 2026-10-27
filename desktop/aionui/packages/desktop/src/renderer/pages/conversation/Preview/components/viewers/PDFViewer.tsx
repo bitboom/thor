@@ -7,6 +7,8 @@
 import { ipcBridge } from '@/common';
 import type { ChatFileRef } from '@/common/types/chatFile';
 import { buildPdfSrc } from '../../previewUrls';
+import { fetchPdfPreviewBlob } from './pdfPreviewBytes';
+import { isElectronDesktop } from '@/renderer/utils/platform';
 import { registerTabReloader } from '../../context/tabReloaderRegistry';
 import { usePreviewToolbarExtras } from '../../context/PreviewToolbarExtrasContext';
 import { Button, Message } from '@arco-design/web-react';
@@ -55,6 +57,9 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({ tabId, fileRef, file_path, cont
   const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [source, setSource] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+  const pdfSrc = buildPdfSrc(fileRef, content);
   const webviewRef = useRef<ElectronWebView>(null);
   const [messageApi, messageContextHolder] = Message.useMessage();
   const toolbarExtrasContext = usePreviewToolbarExtras();
@@ -64,9 +69,10 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({ tabId, fileRef, file_path, cont
   useEffect(() => {
     if (!tabId) return;
     return registerTabReloader(tabId, () => {
-      webviewRef.current?.reload();
+      if (fileRef && isElectronDesktop()) setReloadKey((value) => value + 1);
+      else webviewRef.current?.reload();
     });
-  }, [tabId]);
+  }, [tabId, fileRef]);
   const usePortalToolbar = Boolean(toolbarExtrasContext) && !hideToolbar;
 
   const handleOpenInSystem = useCallback(async () => {
@@ -78,49 +84,45 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({ tabId, fileRef, file_path, cont
     try {
       await ipcBridge.shell.openFile.invoke(file_path);
       messageApi.success(t('preview.openInSystemSuccess'));
-    } catch (err) {
+    } catch {
       messageApi.error(t('preview.openInSystemFailed'));
     }
   }, [file_path, messageApi, t]);
 
   useEffect(() => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      if (!fileRef && !file_path && !content) {
-        setError(t('preview.pdf.pathMissing'));
-        setLoading(false);
-        return;
-      }
-
-      // webview 加载成功后隐藏 loading
-      // Hide loading after webview finishes loading
-      const webview = webviewRef.current;
-      if (webview) {
-        const handleLoad = () => {
+    const controller = new AbortController();
+    let objectUrl: string | undefined;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setSource('');
+    if (!pdfSrc) {
+      setError(t('preview.pdf.pathMissing'));
+      setLoading(false);
+    } else if (fileRef && isElectronDesktop()) {
+      void fetchPdfPreviewBlob(pdfSrc, controller.signal)
+        .then((blob) => {
+          if (cancelled) return;
+          objectUrl = URL.createObjectURL(blob);
+          setSource(objectUrl);
           setLoading(false);
-        };
-        const handleError = () => {
-          setError(t('preview.pdf.loadFailed'));
-          setLoading(false);
-        };
-
-        webview.addEventListener('did-finish-load', handleLoad);
-        webview.addEventListener('did-fail-load', handleError);
-
-        return () => {
-          webview.removeEventListener('did-finish-load', handleLoad);
-          webview.removeEventListener('did-fail-load', handleError);
-        };
-      } else {
-        setLoading(false);
-      }
-    } catch (err) {
-      setError(`${t('preview.pdf.loadFailed')}: ${err instanceof Error ? err.message : String(err)}`);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setError(t('preview.pdf.loadFailed'));
+            setLoading(false);
+          }
+        });
+    } else {
+      setSource(pdfSrc);
       setLoading(false);
     }
-  }, [fileRef, file_path, content, t]);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [pdfSrc, reloadKey, t]);
 
   // 设置工具栏扩展（必须在所有条件返回之前调用）
   // Set toolbar extras (must be called before any conditional returns)
@@ -140,8 +142,6 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({ tabId, fileRef, file_path, cont
 
   // 使用 Electron webview 加载本地 PDF 文件
   // Use Electron webview to load local PDF files
-  const pdfSrc = buildPdfSrc(fileRef, content);
-
   if (error) {
     return (
       <div className='flex items-center justify-center h-full'>
@@ -188,9 +188,9 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({ tabId, fileRef, file_path, cont
       <div className='flex-1 overflow-hidden bg-bg-1'>
         {/* key 确保文件路径改变时 webview 重新挂载 / key ensures webview remounts when file path changes */}
         <webview
-          key={pdfSrc}
+          key={source}
           ref={webviewRef}
-          src={pdfSrc}
+          src={source}
           className='w-full h-full'
           style={{ display: 'inline-flex' }}
         />

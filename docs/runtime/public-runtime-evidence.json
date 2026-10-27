@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-10-27T15:47:58.287Z",
+  "recordedAt": "2026-10-27T16:15:03.033Z",
   "data": "synthetic-only",
   "referenceCore": {
     "version": "0.2.2",
@@ -11,7 +11,15 @@
   "codex": {
     "version": "0.164.0-alpha.11.1",
     "authType": "chatgpt",
-    "globalConfigModified": false
+    "globalConfigModified": false,
+    "sqliteIsolation": {
+      "supportedEnvironmentVariable": "CODEX_SQLITE_HOME",
+      "startupRecoveryVerified": true,
+      "existingChatgptLoginPreserved": true,
+      "credentialFilesCopied": false,
+      "globalStateRepaired": false,
+      "documentation": "https://learn.chatgpt.com/docs/config-file/environment-variables"
+    }
   },
   "stdioMcpProtocol": {
     "testsPassed": 8,
@@ -62,8 +70,8 @@
     "visualFidelityTested": false
   },
   "unitTests": {
-    "total": 21,
-    "passed": 21,
+    "total": 23,
+    "passed": 23,
     "includesSyntheticMcp": true,
     "includesPinnedDownloader": true,
     "includesMemoryStore": true
@@ -74,5 +82,31 @@
     "Installed desktop upgrade data preservation",
     "Enterprise connectors and DRM",
     "Second authenticated agent backend"
-  ]
+  ],
+  "referenceFiftyStepTask": {
+    "completedAt": "2026-10-27T16:02:54.660Z",
+    "conversationId": "569cbc19",
+    "persistedMessages": 57,
+    "completedToolCalls": 50,
+    "finalMarkerVerified": true,
+    "server": "thor_synthetic_mail",
+    "tool": "mail_read",
+    "messageId": "msg-notes-004",
+    "referenceCore": true,
+    "patchedCore": false,
+    "installedDesktop": false,
+    "restartFaultExercised": false
+  },
+  "memoryStore": {
+    "scope": "project-owned file",
+    "facts": 20,
+    "reopenChecks": 5,
+    "updated": 5,
+    "deleted": 5,
+    "concurrentSaves": 20,
+    "killedWriterRecovery": true,
+    "liveWriterLockRefused": true,
+    "externalAutomaticRetentionRejected": true,
+    "nativeModelRestartAcceptance": false
+  }
 }

@@ -28,6 +28,26 @@ bundles the project-memory CLI, and compares the packaged Core, tools and manage
 resources with the verified build. It also checks every offline Hub extension
 against the SHA512 integrity in the index pinned by commit and SHA256.
 
+Before packaging, `release/verify-core-local-boundary.mjs` starts the exact
+staged Core in a fresh synthetic data/work directory with an internally generated
+capability. It checks authenticated HTTP and WebSocket access, rejects missing,
+incorrect and repeated credentials, foreign Host/Origin and unauthenticated
+preflights, and checks CORS responses. No capability or child log is exported.
+The `thor-local-capability-v1` result is bound to Core's SHA256 and included at
+`bundle.core.localBoundary` in provenance. Missing or older evidence fails the
+artifact verifier. CI retains a separate verified Core diagnostic artifact even
+when a later desktop gate fails; a failed workflow cannot publish its installer.
+
+Windows packaging explicitly compiles the locked `better-sqlite3` source with
+the locked `@electron/rebuild` API for Electron 43.8.3. The installed Electron
+binary must first report its expected ABI 148; this verified value supplies the
+override required by the older locked ABI lookup table. A temporary synthetic
+SQLite database must survive insert, close and reopen. The Thor `afterPack`
+hook repeats that test with packaged `Thor.exe`, checks the copied native binary
+hash and loads other shipped Node addons before NSIS creates the installer.
+It bypasses the upstream hook's unpinned fallback download. Provenance and the
+current publication controller require this `thor-electron-native-v1` evidence.
+
 GitHub Actions runs runtime/release rejection tests, Core formatting, Clippy and
 workspace tests, and the desktop quality gates before packaging Windows x64.
 The root `just push` runs the local desktop and Core gates. Desktop tests use
@@ -49,6 +69,18 @@ Existing release assets are not overwritten by this path. The updater reads
 only `bitboom/thor` releases. The build checks that the preview installer is
 unsigned; publisher signing remains a separate prerequisite. Installed update
 and data-preservation evidence is tracked in `docs/verification/ACCEPTANCE.md`.
+
+A reviewed main push may request publication of an already successful Windows
+run through `release/release-request.json`. Its only fields are `schemaVersion`
+(1), `sourceSha` (full lowercase Git SHA), `runId` (positive integer), and
+`version` (stable numeric semantic version). The control workflow accepts only
+the exact successful Thor Windows main run and its single unexpired named
+artifact. The current controller requires the current Core boundary proof before
+running any verifier or publisher from the historical source checkout. It
+rechecks source/version/hashes and main ref drift before creating a new tag and
+using the existing draft/download/verify/publish sequence. Existing tags, assets
+and releases are never replaced. Request-only pushes do not rebuild Windows.
+No request is generated automatically by the implementation or tests.
 
 Installers contain Thor/AionUi/AionCore license texts, NOTICE, source pins,
 available dependency license/notice texts and the Node/OfficeCLI/Electron/GitHub

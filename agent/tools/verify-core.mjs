@@ -15,7 +15,7 @@ if (!values['core-url'] || !values.state || !['initial', 'resume', 'cancel'].inc
 } else {
   try {
     assert.ok(path.isAbsolute(values.state), 'state must be an absolute test-state path.');
-    const api = createLocalCoreClient(values['core-url'], { headers: { ...(process.env.THOR_CORE_AUTHORIZATION ? { Authorization: process.env.THOR_CORE_AUTHORIZATION } : {}), ...(process.env.THOR_CORE_CSRF ? { 'X-CSRF-Token': process.env.THOR_CORE_CSRF } : {}) } });
+    const api = createLocalCoreClient(values['core-url'], { headers: { ...(process.env.THOR_CORE_LOCAL_TOKEN ? { 'X-Thor-Local-Token': process.env.THOR_CORE_LOCAL_TOKEN } : {}), ...(process.env.THOR_CORE_AUTHORIZATION ? { Authorization: process.env.THOR_CORE_AUTHORIZATION } : {}), ...(process.env.THOR_CORE_CSRF ? { 'X-CSRF-Token': process.env.THOR_CORE_CSRF } : {}) } });
     if (values.phase === 'initial') {
       assert.ok(path.isAbsolute(values.workspace), 'workspace must be absolute.');
       await mkdir(values.workspace, { recursive: true });

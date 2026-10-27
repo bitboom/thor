@@ -36,6 +36,37 @@ import {
 const HOST = '127.0.0.1';
 const WS_PATH = '/aionui-cdp';
 
+/** Discovery discloses the WebSocket token, so reject DNS rebinding and browser origins first. */
+function validLocalRequest(req: IncomingMessage, server: Server): boolean {
+  const address = server.address();
+  if (!address || typeof address === 'string') return false;
+  const hosts: string[] = [];
+  const origins: string[] = [];
+  for (let i = 0; i < req.rawHeaders.length; i += 2) {
+    const name = req.rawHeaders[i].toLowerCase();
+    if (name === 'host') hosts.push(req.rawHeaders[i + 1]);
+    if (name === 'origin') origins.push(req.rawHeaders[i + 1]);
+  }
+  const authority = `${HOST}:${address.port}`;
+  return (
+    hosts.length === 1 &&
+    hosts[0] === authority &&
+    origins.length <= 1 &&
+    (origins.length === 0 || origins[0] === `http://${authority}`)
+  );
+}
+
+function localPath(req: IncomingMessage): URL | null {
+  const target = req.url ?? '';
+  if (!target.startsWith('/') || target.startsWith('//')) return null;
+  try {
+    const url = new URL(target, `http://${HOST}`);
+    return url.origin === `http://${HOST}` ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 export type CdpBridgeHandle = {
   port: number;
   token: string;
@@ -324,6 +355,8 @@ const writeJson = (res: ServerResponse, body: unknown) => {
  *  - HTTP discovery (/json/version, /json/list) is unauthenticated and its response carries
  *    a tokened ws address.
  *  - The WebSocket enforces the token; all actual control flows there.
+ * Both require the exact loopback Host and reject foreign or opaque browser Origins.
+ * Native Puppeteer clients without an Origin remain supported.
  *
  * ⚠️ Be honest about the threat model: because discovery is unauthenticated and hands the
  * token out, any process running as the same user can scan this port and retrieve the token
@@ -341,7 +374,19 @@ export const startCdpBridge = async (): Promise<CdpBridgeHandle> => {
   const token = randomBytes(24).toString('hex');
 
   const httpServer: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url ?? '/', `http://${HOST}`);
+    if (!validLocalRequest(req, httpServer)) {
+      res.writeHead(403).end('forbidden');
+      return;
+    }
+    const url = localPath(req);
+    if (!url) {
+      res.writeHead(400).end('bad request');
+      return;
+    }
+    if (req.method !== 'GET') {
+      res.writeHead(405).end('method not allowed');
+      return;
+    }
     const wsUrl = `ws://${HOST}:${port}${WS_PATH}?token=${token}`;
     const info = currentTargetInfo();
 
@@ -359,8 +404,13 @@ export const startCdpBridge = async (): Promise<CdpBridgeHandle> => {
   const wss = new WebSocketServer({ noServer: true });
 
   httpServer.on('upgrade', (req, socket, head) => {
-    const url = new URL(req.url ?? '/', `http://${HOST}`);
-    if (url.pathname !== WS_PATH || !tokensMatch(token, url.searchParams.get('token') ?? '')) {
+    const url = localPath(req);
+    if (
+      !validLocalRequest(req, httpServer) ||
+      !url ||
+      url.pathname !== WS_PATH ||
+      !tokensMatch(token, url.searchParams.get('token') ?? '')
+    ) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
       return;

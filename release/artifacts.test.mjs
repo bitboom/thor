@@ -6,6 +6,8 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'js-yaml';
 import { root, readJson, digest, describeFile, validateUpdateManifest, verifyRelease } from './artifact-lib.mjs';
+import { localBoundaryPolicy, requiredLocalBoundaryChecks } from './local-boundary-policy.mjs';
+import { nativeDesktopPolicy, nativeDesktopElectron, nativeDesktopAbi, sqliteNativeFile } from './native-policy.mjs';
 
 const version = '0.1.0';
 const installer = Buffer.from('MZ synthetic installer fixture');
@@ -51,12 +53,13 @@ function releaseFixture(t) {
     platform: 'windows-x64', authenticode: 'unsigned-preview', upstream,
     bundle: {
       schemaVersion: 1, runtimeKey: 'win32-x64',
-      core: { file: 'aioncore.exe', size: 2, sha256: 'c'.repeat(64), source: 'host/aioncore', officeCliLockSha256: 'f'.repeat(64) },
+      core: { file: 'aioncore.exe', size: 2, sha256: 'c'.repeat(64), source: 'host/aioncore', officeCliLockSha256: 'f'.repeat(64), localBoundary: { schemaVersion: 1, policy: localBoundaryPolicy, passed: true, coreSha256: 'c'.repeat(64), checks: Object.fromEntries(requiredLocalBoundaryChecks.map(name => [name, true])), httpDeniedRequests: 24, wsDeniedRequests: 9 } },
       node: { file: `managed-resources/node/node-v${upstream.managedNode.version}-win-x64/node.exe`, version: upstream.managedNode.version, sha256: upstream.managedNode.executableSha256, archiveSha256: upstream.managedNode.sha256 },
       officeCli: { file: `managed-resources/officecli/${office.version}/${pin.name}`, version: office.version, sha256: 'e'.repeat(64), size: pin.size, readOnlyWatch: true, lockSha256: 'f'.repeat(64), source: { repository: officeSource.repository, commit: officeSource.commit, patchSha256: officeSource.patch.sha256, policy: officeSource.policy, sdkVersion: officeSource.sdkVersion } },
       managedResourcesSha256: 'd'.repeat(64),
     },
     tools: { githubCli: { file: 'tools/gh.exe', version: upstream.githubCli.version, sha256: upstream.githubCli.executableSha256, archiveSha256: upstream.githubCli.sha256 } },
+    desktopNative: { schemaVersion: 1, policy: nativeDesktopPolicy, electronVersion: nativeDesktopElectron, modulesAbi: nativeDesktopAbi, platform: 'win32', architecture: 'x64', installedSmoke: true, packagedSmoke: true, rebuild: { name: '@electron/rebuild', version: '4.0.4', sourceBuild: true, runtimeAbiVerified: true }, sqlite: { name: 'better-sqlite3', version: '12.8.0', file: sqliteNativeFile, sha256: '1'.repeat(64), persistence: true }, additionalNativeFiles: [] },
     hub: { commit: upstream.hub.commit, indexSha256: upstream.hub.indexSha256, extensions: [] },
   };
   writeFileSync(path.join(output, file), installer);
@@ -102,6 +105,28 @@ test('rejects a bundled OfficeCLI version different from the pin', t => {
   fixture.provenance.bundle.officeCli.version = 'v0.0.0';
   fixture.write();
   assert.throws(fixture.verify, /OfficeCLI provenance/);
+});
+
+test('rejects an installer lacking packaged Electron native ABI proof', t => {
+  const fixture = releaseFixture(t);
+  fixture.provenance.desktopNative.packagedSmoke = false;
+  fixture.write();
+  assert.throws(fixture.verify, /native ABI smoke proof/);
+});
+
+for (const [label, mutate] of [
+  ['missing evidence', core => delete core.localBoundary],
+  ['obsolete policy', core => core.localBoundary.policy = 'older-policy'],
+  ['another binary', core => core.localBoundary.coreSha256 = '0'.repeat(64)],
+  ['failed run', core => core.localBoundary.passed = false],
+  ['missing HTTP rejection', core => delete core.localBoundary.checks.httpForeignOriginRejected],
+  ['missing WebSocket rejection', core => core.localBoundary.checks.wsMissingCapabilityRejected = false],
+  ['incomplete matrix', core => core.localBoundary.wsDeniedRequests = 1],
+]) test(`rejects Core boundary proof with ${label}`, t => {
+  const fixture = releaseFixture(t);
+  mutate(fixture.provenance.bundle.core);
+  fixture.write();
+  assert.throws(fixture.verify, /local-boundary|Local-boundary/);
 });
 
 test('rejects the original mutable OfficeCLI binary and missing read-only policy', t => {

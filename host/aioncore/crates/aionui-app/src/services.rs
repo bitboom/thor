@@ -74,6 +74,7 @@ pub struct AppServices {
     pub work_dir: PathBuf,
     /// When `true`, skip JWT authentication and use a fixed default user.
     pub local: bool,
+    pub(crate) local_channel: crate::local_channel::LocalChannelPolicy,
     pub identity_mode: IdentityMode,
     pub bootstrap_secret: Option<Arc<str>>,
     pub app_version: String,
@@ -452,6 +453,7 @@ impl AppServices {
             dump_prompts,
             work_dir,
             local,
+            local_channel: crate::local_channel::LocalChannelPolicy::new(config.port, config.local_channel.clone()),
             identity_mode,
             bootstrap_secret: config.bootstrap_secret.clone().map(Arc::<str>::from),
             app_version,

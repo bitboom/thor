@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-10-27T16:09:00Z",
+  "recordedAt": "2026-10-27T16:40:00Z",
   "data": "synthetic-only",
   "installedDesktopVerified": false,
   "realCodexContinuity": {
@@ -42,6 +42,27 @@
     "windowsBuildExecuted": false,
     "releasePublished": false,
     "reason": "Workflow permission check only; full source has not yet been seeded."
+  },
+  "githubSourceAndBuild": {
+    "repository": "https://github.com/bitboom/thor",
+    "bootstrapRunUrl": "https://github.com/bitboom/thor/actions/runs/40539153033",
+    "bootstrapSucceeded": true,
+    "reconstructedSourceCommit": "ab419fe7277ff23147583eeca05e06c0b2a39c59",
+    "canonicalSourceSha256": "7f262c59c2b95c8a502f8af74cd952775f2cdc595943881d56e2ce6fff7e1d2a",
+    "windowsRunUrl": "https://github.com/bitboom/thor/actions/runs/40540906454",
+    "windowsSourceCommit": "356eff881f8e670bd7091c54591c2cd452c1e08e",
+    "runtimeTestsPassed": 53,
+    "windowsBuildSucceeded": false,
+    "failure": "Core clippy rejected Windows-unused imports/helpers and unreachable platform-specific test statements.",
+    "releasePublished": false,
+    "diagnosticSourceMustNotBeReleased": true
+  },
+  "githubDefectTracking": {
+    "issueUrl": "https://github.com/bitboom/thor/issues/1",
+    "actualIssueCreatedAndReadBack": true,
+    "submissionChannel": "connected GitHub integration",
+    "installedAppFeedbackUiTested": false,
+    "subject": "Authenticate the private desktop Core channel before the first release."
   },
   "limitations": [
     "No installed-app UI, automatic update, app feedback issue or release-loop acceptance yet.",

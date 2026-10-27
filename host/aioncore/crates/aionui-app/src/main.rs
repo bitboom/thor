@@ -28,6 +28,28 @@ fn main() -> ExitCode {
 
 fn run_main() -> Result<ExitCode, MainError> {
     let cli = Cli::parse();
+    let local_token = std::env::var("THOR_CORE_LOCAL_TOKEN").unwrap_or_default();
+    let trusted_origin = std::env::var("THOR_CORE_TRUSTED_ORIGIN").ok();
+    // SAFETY: no runtime, shell probe, service, or worker exists yet. Capture
+    // the capability in private memory and remove it before ANY child spawn.
+    unsafe {
+        std::env::remove_var("THOR_CORE_LOCAL_TOKEN");
+        std::env::remove_var("THOR_CORE_TRUSTED_ORIGIN");
+    }
+    let local_channel =
+        if cli.command.is_none() && (cli.local || aionui_app::IdentityMode::from(cli.identity_mode).is_local()) {
+            Some(
+                aionui_app::LocalChannelCredentials::new(local_token, trusted_origin).map_err(|message| {
+                    bootstrap::BootstrapError::new(
+                        bootstrap::BootstrapErrorCode::ConfigInvalid,
+                        "config.local_channel",
+                        message,
+                    )
+                })?,
+            )
+        } else {
+            None
+        };
 
     // mcp-* subcommands route into short-lived stdio helpers that live entirely
     // outside the main HTTP server. They share the global flags so clap can
@@ -53,7 +75,7 @@ fn run_main() -> Result<ExitCode, MainError> {
         .enable_all()
         .build()
         .map_err(|error| runtime_init_error_for_command(&cli.command, error))?;
-    runtime.block_on(async_main(merged_path, cli))
+    runtime.block_on(async_main(merged_path, cli, local_channel))
 }
 
 fn runtime_init_error_for_command(command: &Option<Command>, error: std::io::Error) -> MainError {
@@ -75,7 +97,11 @@ fn runtime_init_error_for_command(command: &Option<Command>, error: std::io::Err
     ))
 }
 
-async fn async_main(merged_path: String, cli: Cli) -> Result<ExitCode, MainError> {
+async fn async_main(
+    merged_path: String,
+    cli: Cli,
+    local_channel: Option<aionui_app::LocalChannelCredentials>,
+) -> Result<ExitCode, MainError> {
     // MCP stdio helpers must not touch the database, logging setup, or `AppServices`.
     match cli.command {
         Some(Command::Capabilities) => Ok(commands::run_capabilities()),
@@ -93,6 +119,7 @@ async fn async_main(merged_path: String, cli: Cli) -> Result<ExitCode, MainError
         Some(Command::PrepareManagedResources(args)) => Ok(commands::run_prepare_managed_resources(args).await?),
         None => {
             let mut env = bootstrap::init_environment(&cli, &merged_path)?;
+            env.config.local_channel = local_channel;
 
             // Acquire the data-dir process-level guard before binding a port or
             // touching the DB, so a second aioncore yields structurally rather

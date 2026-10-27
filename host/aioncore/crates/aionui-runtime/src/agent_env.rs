@@ -65,6 +65,8 @@ fn clean_agent_env(env: &mut BTreeMap<OsString, OsString>) {
         "NODE_INSPECT",
         "NODE_DEBUG",
         "CLAUDECODE",
+        "THOR_CORE_LOCAL_TOKEN",
+        "THOR_CORE_TRUSTED_ORIGIN",
         "SSL_CERT_FILE",
         "SSL_CERT_DIR",
     ] {
@@ -259,10 +261,31 @@ fn is_valid_env_key(key: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::ffi::OsStr;
+    #[cfg(unix)]
     use std::path::Path;
 
+    #[cfg(unix)]
     const CHILD_MARKER: &str = "AIONUI_RUNTIME_AGENT_ENV_TEST_CHILD";
+
+    #[test]
+    fn desktop_local_capability_is_never_part_of_agent_environment() {
+        let result = build_agent_process_env(
+            vec![
+                ("THOR_CORE_LOCAL_TOKEN".into(), "canary-do-not-inherit".into()),
+                ("THOR_CORE_TRUSTED_ORIGIN".into(), "http://localhost:5173".into()),
+                ("AIONUI_RUNTIME_TOKEN".into(), "scoped-helper-token".into()),
+            ],
+            vec![],
+        );
+        assert!(get_env_value(&result, "THOR_CORE_LOCAL_TOKEN").is_none());
+        assert!(get_env_value(&result, "THOR_CORE_TRUSTED_ORIGIN").is_none());
+        assert_eq!(
+            get_env_value(&result, "AIONUI_RUNTIME_TOKEN").unwrap(),
+            "scoped-helper-token"
+        );
+    }
 
     #[cfg(unix)]
     #[tokio::test]

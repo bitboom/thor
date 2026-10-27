@@ -95,6 +95,11 @@ pub async fn auth_middleware(
 ) -> Result<Response, ApiError> {
     // In local mode, skip JWT verification and inject a fixed default user.
     if state.identity_mode == AuthIdentityMode::Local {
+        // Native conversation helpers carry their own scoped credential; never
+        // turn a forged helper header into the default-user desktop session.
+        if request.headers().contains_key(RUNTIME_TOKEN_HEADER) {
+            return runtime_token_channel(&state, request, next).await;
+        }
         request.extensions_mut().insert(CurrentUser::local_default());
         return Ok(next.run(request).await);
     }

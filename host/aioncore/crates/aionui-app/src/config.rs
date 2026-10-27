@@ -35,6 +35,8 @@ pub struct AppConfig {
     pub app_version: String,
     /// Run in local embedded mode (skip authentication, use system_default_user).
     pub local: bool,
+    /// Desktop-only process capability. Never expose it to renderers or agents.
+    pub local_channel: Option<crate::LocalChannelCredentials>,
     pub identity_mode: IdentityMode,
     pub bootstrap_secret: Option<String>,
     /// Dump prompt diagnostics under `data_dir/prompt-dumps`.
@@ -81,6 +83,7 @@ impl Default for AppConfig {
             work_dir: PathBuf::from("data"),
             app_version: env!("CARGO_PKG_VERSION").to_string(),
             local: false,
+            local_channel: None,
             identity_mode: IdentityMode::WebUi,
             bootstrap_secret: None,
             dump_prompts: false,

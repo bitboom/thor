@@ -19,6 +19,12 @@ const HOP_BY_HOP_HEADERS: &[&str] = &[
     "upgrade",
     "cookie",
     "authorization",
+    "x-thor-local-token",
+    "x-aionui-runtime-token",
+    "x-aionui-user-id",
+    "x-aionui-conversation-id",
+    "origin",
+    "referer",
 ];
 
 const NAVIGATION_GUARD_TEMPLATE: &str = r#"<script>
@@ -283,6 +289,78 @@ fn find_head_tag_end(html: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn forward_never_exposes_core_credentials_to_preview_child_or_response() {
+        use axum::response::IntoResponse;
+        use std::collections::BTreeMap;
+
+        async fn echo(headers: axum::http::HeaderMap) -> axum::response::Response {
+            let values: BTreeMap<String, String> = headers
+                .iter()
+                .map(|(name, value)| (name.as_str().to_owned(), value.to_str().unwrap().to_owned()))
+                .collect();
+            let mut response = axum::Json(values).into_response();
+            response
+                .headers_mut()
+                .insert("x-thor-local-token", HeaderValue::from_static("UPSTREAM_CANARY"));
+            response
+        }
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, axum::Router::new().route("/", axum::routing::get(echo)))
+                .await
+                .unwrap();
+        });
+        let manager = Arc::new(OfficecliWatchManager::new(
+            Arc::new(crate::watch_manager::DefaultProcessSpawner::new(
+                std::path::PathBuf::new(),
+            )),
+            Arc::new(aionui_realtime::BroadcastEventBus::new(16)),
+        ));
+        let service = ProxyService::new(manager);
+        let request_headers: Vec<(String, String)> = [
+            ("X-Thor-Local-Token", "DESKTOP_CANARY"),
+            ("X-Aionui-Runtime-Token", "RUNTIME_CANARY"),
+            ("X-Aionui-User-Id", "USER_CANARY"),
+            ("X-Aionui-Conversation-Id", "CONVERSATION_CANARY"),
+            ("Authorization", "Bearer AUTH_CANARY"),
+            ("Cookie", "SESSION_CANARY"),
+            ("Origin", "null"),
+            ("Referer", "file:///synthetic-private-renderer/index.html"),
+            ("Host", "wrong.invalid"),
+            ("Accept", "application/json"),
+            ("X-Preview-Test", "preserved"),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value.to_owned()))
+        .collect();
+        let response = service
+            .forward_inner(port, "/", "/api/test-proxy", &request_headers)
+            .await
+            .unwrap();
+        assert_eq!(response.status, 200);
+        let received: BTreeMap<String, String> = serde_json::from_slice(&response.body).unwrap();
+        for name in [
+            "x-thor-local-token",
+            "x-aionui-runtime-token",
+            "x-aionui-user-id",
+            "x-aionui-conversation-id",
+            "authorization",
+            "cookie",
+            "origin",
+            "referer",
+        ] {
+            assert!(!received.contains_key(name), "preview child received {name}");
+        }
+        assert_eq!(received["host"], format!("127.0.0.1:{port}"));
+        assert_eq!(received["accept"], "application/json");
+        assert_eq!(received["x-preview-test"], "preserved");
+        assert!(!response.headers.iter().any(|(name, _)| name == "x-thor-local-token"));
+        server.abort();
+    }
 
     #[test]
     fn build_target_url_with_leading_slash() {

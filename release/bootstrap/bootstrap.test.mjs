@@ -116,7 +116,7 @@ test('reconstructs shallow pinned subtrees and binary patches before pushing a m
   const capture = path.join(temporary, 'dispatch.json');
   const hook = path.join(temporary, 'dispatch-hook.mjs');
   writeFileSync(hook, `import cp from 'node:child_process'; import {writeFileSync} from 'node:fs'; import {syncBuiltinESMExports} from 'node:module'; const original=cp.execFileSync; cp.execFileSync=(command,args,options)=>{if(command==='gh'){writeFileSync(process.env.THOR_TEST_CAPTURE,JSON.stringify(args)); return Buffer.alloc(0);} return original(command,args,options);}; syncBuiltinESMExports();`);
-  const environment = { ...process.env, GITHUB_REPOSITORY: 'bitboom/thor', GITHUB_SHA: seed, THOR_BOOTSTRAP_SEED_SHA: seed, GH_TOKEN: 'synthetic-test-token', THOR_TEST_CAPTURE: capture, NODE_OPTIONS: `--import=${pathToFileURL(hook).href}` };
+  const environment = { ...process.env, GITHUB_OUTPUT: path.join(temporary, 'step-output.txt'), GITHUB_REPOSITORY: 'bitboom/thor', GITHUB_SHA: seed, THOR_BOOTSTRAP_SEED_SHA: seed, GH_TOKEN: 'synthetic-test-token', THOR_TEST_CAPTURE: capture, NODE_OPTIONS: `--import=${pathToFileURL(hook).href}` };
   execFileSync(process.execPath, [path.join(helpers, 'run.mjs')], { cwd: checkout, env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
   const remoteTree = treeEntries(git(checkout, ['--git-dir', bare, 'ls-tree', '-rz', 'refs/heads/main']));
   assert.equal(snapshotDigest(remoteTree), sourceManifest.sourceTreeSha256);

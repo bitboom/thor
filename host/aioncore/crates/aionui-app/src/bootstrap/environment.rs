@@ -82,6 +82,9 @@ pub fn init_environment(cli: &Cli, merged_path: &str) -> Result<ServerEnvironmen
         work_dir,
         app_version: cli.app_version.clone(),
         local: cli.local || identity_mode.is_local(),
+        // The entry point captures and clears the local capability before
+        // creating worker threads, then installs it in this server config.
+        local_channel: None,
         identity_mode,
         bootstrap_secret,
         dump_prompts: cli.dump_prompts,
@@ -90,7 +93,7 @@ pub fn init_environment(cli: &Cli, merged_path: &str) -> Result<ServerEnvironmen
     info!(
         identity_mode = config.identity_mode.auth_label(),
         auth = if config.identity_mode.is_local() {
-            "disabled"
+            "local-capability"
         } else {
             "enabled"
         },

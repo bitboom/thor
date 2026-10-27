@@ -6,7 +6,7 @@ import { parseArgs } from 'node:util';
 import { mkdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { ProjectMemory } from '../memory-store.mjs';
 import { createLocalCoreClient } from '../adapters/aioncore.mjs';
@@ -46,13 +46,14 @@ try {
     await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
     const port = probe.address().port;
     await new Promise(resolve => probe.close(resolve));
+    const localToken = randomBytes(32).toString('hex');
     child = spawn(values.core, ['--local', '--host', '127.0.0.1', '--port', String(port), '--data-dir', data, '--work-dir', workspace, '--parent-pid', String(process.pid), '--log-level', 'error'], {
       windowsHide: true, stdio: ['ignore', 'ignore', 'ignore'],
-      env: { ...process.env, AIONUI_BUNDLED_MANAGED_RESOURCES: path.join(values.bundle, 'managed-resources'), CODEX_SQLITE_HOME: path.join(root, 'codex-sqlite'), PATH: [path.dirname(values.codex), nodeDir, process.env.PATH ?? ''].join(path.delimiter) },
+      env: { ...process.env, THOR_CORE_LOCAL_TOKEN: localToken, AIONUI_BUNDLED_MANAGED_RESOURCES: path.join(values.bundle, 'managed-resources'), CODEX_SQLITE_HOME: path.join(root, 'codex-sqlite'), PATH: [path.dirname(values.codex), nodeDir, process.env.PATH ?? ''].join(path.delimiter) },
     });
     let startFailed = false;
     child.on('error', () => { startFailed = true; });
-    const api = createLocalCoreClient(`http://127.0.0.1:${port}`);
+    const api = createLocalCoreClient(`http://127.0.0.1:${port}`, { headers: { 'X-Thor-Local-Token': localToken } });
     for (let index = 0; index < 100; index++) {
       if (startFailed || child.exitCode !== null) throw new Error('Core could not start for memory acceptance.');
       try { await api.get('/api/conversations?limit=1'); return api; } catch { await pause(100); }

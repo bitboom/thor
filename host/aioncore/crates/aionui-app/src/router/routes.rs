@@ -11,7 +11,7 @@ use axum::middleware::{Next, from_fn_with_state};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Router, middleware};
-use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use aionui_ai_agent::{
     RuntimeTokenScope, RuntimeTokenService, TEAM_RUNTIME_TOKEN_SESSION_GENERATION, agent_routes, remote_agent_routes,
@@ -454,18 +454,15 @@ pub fn create_router_with_all_state(services: &AppServices, states: ModuleStates
     );
 
     if services.identity_mode.is_local() {
-        let cors = CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods([
-                Method::GET,
-                Method::POST,
-                Method::PUT,
-                Method::PATCH,
-                Method::DELETE,
-                Method::OPTIONS,
-            ])
-            .allow_headers(Any);
-        router.layer(cors)
+        // Outermost boundary covers health, assets, proxies and WebSocket
+        // upgrades as well as ordinary authenticated API route groups.
+        router.layer(middleware::from_fn_with_state(
+            services
+                .local_channel
+                .clone()
+                .with_runtime_verifier(auth_mw_state.runtime_token_verifier.clone()),
+            crate::local_channel::local_channel_middleware,
+        ))
     } else {
         // Non-local (external identity) mode: the desktop renderer is a
         // cross-origin browser context (localhost:5173 in dev, file:// when

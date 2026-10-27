@@ -4,7 +4,7 @@ default:
     @just --list
 
 test:
-    node --test tests/runtime/*.test.mjs release/*.test.mjs release/bootstrap/*.test.mjs
+    node --test tests/runtime/*.test.mjs release/*.test.mjs release/bootstrap/*.test.mjs release/control/*.test.mjs
 
 check: test
     node release/check-version.mjs

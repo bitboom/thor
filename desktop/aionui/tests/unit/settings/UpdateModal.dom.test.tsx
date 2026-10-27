@@ -8,7 +8,7 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { AutoUpdateStatus, UpdateDownloadProgressEvent, UpdateDownloadRequest } from '@/common/update/updateTypes';
+import type { AutoUpdateStatus, UpdateDownloadProgressEvent } from '@/common/update/updateTypes';
 
 const mocks = vi.hoisted(() => ({
   manualProgressHandler: null as ((evt: UpdateDownloadProgressEvent) => void) | null,
@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   autoUpdateRestoreDownloadedMock: vi.fn(),
   updateCheckMock: vi.fn(),
   updateDownloadMock: vi.fn(),
+  openExternalMock: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -59,7 +60,7 @@ vi.mock('@/common', () => ({
       open: { on: vi.fn(() => vi.fn()) },
     },
     shell: {
-      openExternal: { invoke: vi.fn() },
+      openExternal: { invoke: mocks.openExternalMock },
       openFile: { invoke: vi.fn() },
       showItemInFolder: { invoke: vi.fn() },
     },
@@ -98,24 +99,6 @@ describe('UpdateModal manual install fallback', () => {
         },
       },
     });
-    mocks.updateDownloadMock.mockImplementation(async (request: UpdateDownloadRequest) => {
-      const downloadId = request.downloadId ?? 'missing-download-id';
-      mocks.manualProgressHandler?.({
-        downloadId,
-        status: 'completed',
-        receivedBytes: 123,
-        totalBytes: 123,
-        percent: 100,
-        file_path: '/tmp/AionUi-2.1.14-mac-arm64.dmg',
-      });
-      return {
-        success: true,
-        data: {
-          downloadId,
-          file_path: '/tmp/AionUi-2.1.14-mac-arm64.dmg',
-        },
-      };
-    });
   });
 
   afterEach(() => {
@@ -124,7 +107,7 @@ describe('UpdateModal manual install fallback', () => {
     vi.unstubAllGlobals();
   });
 
-  it('keeps fast manual download completion matched to the caller-provided download id', async () => {
+  it('opens the Thor release page instead of downloading an unverified executable', async () => {
     const user = userEvent.setup();
     render(<UpdateModal />);
 
@@ -132,20 +115,10 @@ describe('UpdateModal manual install fallback', () => {
       window.dispatchEvent(new Event('aionui-open-update-modal'));
     });
 
-    const downloadAndInstall = await screen.findByText('update.downloadButton');
-    await user.click(downloadAndInstall);
-
-    await waitFor(() => {
-      expect(screen.getByText('update.restartNow')).toBeInTheDocument();
-    });
-
-    expect(mocks.updateDownloadMock).toHaveBeenCalledWith({
-      downloadId: expect.any(String),
-      url: 'https://static.aionui.com/releases/2.1.14/AionUi-2.1.14-mac-arm64.dmg',
-      fallbackUrl: 'https://github.com/iOfficeAI/AionUi/releases/download/v2.1.14/AionUi-2.1.14-mac-arm64.dmg',
-      file_name: 'AionUi-2.1.14-mac-arm64.dmg',
-    });
-    expect(screen.queryByText('update.manualInstall')).not.toBeInTheDocument();
+    await user.click(await screen.findByText('update.releasePage'));
+    expect(mocks.openExternalMock).toHaveBeenCalledWith('https://github.com/bitboom/thor/releases');
+    expect(mocks.updateDownloadMock).not.toHaveBeenCalled();
+    expect(screen.queryByText('update.restartNow')).not.toBeInTheDocument();
   });
 
   it('loads release notes when auto-update status opens the modal', async () => {

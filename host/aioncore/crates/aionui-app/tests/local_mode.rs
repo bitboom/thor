@@ -1,13 +1,111 @@
+use aionui_ai_agent::{RuntimeTokenScope, TEAM_RUNTIME_TOKEN_SESSION_GENERATION};
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use serde_json::Value;
 use tower::ServiceExt;
 
 #[tokio::test]
-async fn test_local_mode_skips_auth() {
+async fn local_helpers_require_live_bound_scope_without_desktop_capability() {
     let db = aionui_db::init_database_memory().await.unwrap();
     let config = aionui_app::AppConfig {
         local: true,
+        port: 32100,
+        local_channel: Some(aionui_app::LocalChannelCredentials::new("01".repeat(32), None).unwrap()),
+        ..Default::default()
+    };
+    let services = aionui_app::AppServices::from_config(db, &config).await.unwrap();
+    let router = aionui_app::create_router(&services).await.expect("build router");
+    let issue = services.runtime_token_service.issue(
+        "system_default_user",
+        "local-helper",
+        TEAM_RUNTIME_TOKEN_SESSION_GENERATION,
+        [RuntimeTokenScope::ConversationHelper],
+    );
+    let wrong_scope = services.runtime_token_service.issue(
+        "system_default_user",
+        "local-helper",
+        TEAM_RUNTIME_TOKEN_SESSION_GENERATION,
+        [RuntimeTokenScope::TeamContext],
+    );
+    for (token, user, conversation, origin, path, expected) in [
+        (
+            issue.token.as_str(),
+            "system_default_user",
+            "local-helper",
+            None,
+            "/api/settings",
+            StatusCode::OK,
+        ),
+        (
+            issue.token.as_str(),
+            "forged-user",
+            "local-helper",
+            None,
+            "/api/settings",
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            issue.token.as_str(),
+            "system_default_user",
+            "forged-conversation",
+            None,
+            "/api/settings",
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            wrong_scope.token.as_str(),
+            "system_default_user",
+            "local-helper",
+            None,
+            "/api/settings",
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            issue.token.as_str(),
+            "system_default_user",
+            "local-helper",
+            Some("null"),
+            "/api/settings",
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            issue.token.as_str(),
+            "system_default_user",
+            "local-helper",
+            None,
+            "/ws",
+            StatusCode::UNAUTHORIZED,
+        ),
+    ] {
+        let mut request = Request::builder()
+            .uri(path)
+            .header("host", "127.0.0.1:32100")
+            .header("x-aionui-runtime-token", token)
+            .header("x-aionui-user-id", user)
+            .header("x-aionui-conversation-id", conversation);
+        if let Some(origin) = origin {
+            request = request.header("origin", origin);
+        }
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(request.body(Body::empty()).unwrap())
+                .await
+                .unwrap()
+                .status(),
+            expected
+        );
+    }
+    services.database.close().await;
+}
+
+#[tokio::test]
+async fn test_local_mode_requires_desktop_capability() {
+    let db = aionui_db::init_database_memory().await.unwrap();
+    let config = aionui_app::AppConfig {
+        local: true,
+        port: 32100,
+        local_channel: Some(aionui_app::LocalChannelCredentials::new("01".repeat(32), None).unwrap()),
         ..Default::default()
     };
     let services = aionui_app::AppServices::from_config(db, &config).await.unwrap();
@@ -17,17 +115,30 @@ async fn test_local_mode_skips_auth() {
     // Health check should work
     let response = router
         .clone()
-        .oneshot(Request::builder().uri("/health").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .header("host", "127.0.0.1:32100")
+                .header("x-thor-local-token", "01".repeat(32))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    // An authenticated endpoint should work WITHOUT a token in local mode
+    // No JWT is needed, but the per-child desktop capability is mandatory.
     let response = router
-        .oneshot(Request::builder().uri("/api/settings").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/settings")
+                .header("host", "127.0.0.1:32100")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
-    assert_ne!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
     services.database.close().await;
 }

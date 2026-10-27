@@ -229,6 +229,27 @@ describe('buildSpawnArgs', () => {
 });
 
 describe('buildSpawnEnv', () => {
+  it('uses only a fresh explicit capability and never inherits parent local auth', () => {
+    const previousToken = process.env.THOR_CORE_LOCAL_TOKEN;
+    const previousOrigin = process.env.THOR_CORE_TRUSTED_ORIGIN;
+    process.env.THOR_CORE_LOCAL_TOKEN = 'parent-secret';
+    process.env.THOR_CORE_TRUSTED_ORIGIN = 'http://untrusted.invalid';
+    try {
+      expect(buildSpawnEnv()).not.toHaveProperty('THOR_CORE_LOCAL_TOKEN');
+      expect(buildSpawnEnv()).not.toHaveProperty('THOR_CORE_TRUSTED_ORIGIN');
+      const env = buildSpawnEnv(undefined, undefined, {
+        token: 'fresh-capability',
+        trustedOrigin: 'http://localhost:5173',
+      });
+      expect(env.THOR_CORE_LOCAL_TOKEN).toBe('fresh-capability');
+      expect(env.THOR_CORE_TRUSTED_ORIGIN).toBe('http://localhost:5173');
+    } finally {
+      if (previousToken === undefined) delete process.env.THOR_CORE_LOCAL_TOKEN;
+      else process.env.THOR_CORE_LOCAL_TOKEN = previousToken;
+      if (previousOrigin === undefined) delete process.env.THOR_CORE_TRUSTED_ORIGIN;
+      else process.env.THOR_CORE_TRUSTED_ORIGIN = previousOrigin;
+    }
+  });
   it('isolates only Codex SQLite state and preserves the existing authentication home', () => {
     const previous = process.env.CODEX_HOME;
     process.env.CODEX_HOME = '/existing-auth-home';
@@ -388,7 +409,14 @@ describe('BackendLifecycleManager.start (success path)', () => {
     expect(port).toBe(55555);
     expect(mgr.port).toBe(55555);
     expect(createServer).not.toHaveBeenCalled();
-    expect(fetchSpy).toHaveBeenCalledWith('http://127.0.0.1:55555/health');
+    expect(fetchSpy).toHaveBeenCalledWith('http://127.0.0.1:55555/health', {
+      headers: mgr.getLocalAuthHeaders(),
+      redirect: 'error',
+    });
+    expect(mgr.getLocalAuthHeaders()['X-Thor-Local-Token']).toMatch(/^[a-f0-9]{64}$/);
+    expect(vi.mocked(spawn).mock.calls[0][2]?.env?.THOR_CORE_LOCAL_TOKEN).toBe(
+      mgr.getLocalAuthHeaders()['X-Thor-Local-Token']
+    );
     expect(vi.mocked(spawn).mock.calls[0][1]).toEqual([
       '--port',
       '0',

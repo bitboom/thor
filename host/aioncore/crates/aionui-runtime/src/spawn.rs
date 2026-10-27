@@ -211,11 +211,17 @@ impl Builder {
 
     /// Spawn the process and return the standard `tokio::process::Child`.
     pub fn spawn(mut self) -> io::Result<Child> {
+        self.inner
+            .env_remove("THOR_CORE_LOCAL_TOKEN")
+            .env_remove("THOR_CORE_TRUSTED_ORIGIN");
         self.inner.spawn()
     }
 
     /// Run to completion and collect stdout/stderr.
     pub async fn output(mut self) -> io::Result<std::process::Output> {
+        self.inner
+            .env_remove("THOR_CORE_LOCAL_TOKEN")
+            .env_remove("THOR_CORE_TRUSTED_ORIGIN");
         self.inner.output().await
     }
 }
@@ -366,6 +372,7 @@ fn resolve_program(program: &OsStr) -> OsString {
 mod tests {
     use super::*;
     use crate::ResolvedCommand;
+    #[cfg(unix)]
     use std::time::{Duration, Instant};
 
     #[tokio::test]

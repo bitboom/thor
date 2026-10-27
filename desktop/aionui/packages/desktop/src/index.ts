@@ -20,6 +20,13 @@ import { app, BrowserWindow, ipcMain, nativeImage, powerMonitor, session } from 
 import fixPath from 'fix-path';
 import * as fs from 'fs';
 import * as path from 'path';
+import { pathToFileURL } from 'node:url';
+import {
+  coreRequestHeaders,
+  installCoreMainFetch,
+  isTrustedDevDocument,
+  trustedCoreRequest,
+} from './process/startup/coreTransport';
 import { initMainAdapterWithWindow } from './common/adapter/main';
 import { ipcBridge } from './common';
 import {
@@ -224,6 +231,10 @@ const backendManager = new BackendLifecycleManager(
     userDataPath: app.getPath('userData'),
   },
   resolveBinaryPath
+);
+installCoreMainFetch(
+  () => backendManager.port,
+  () => backendManager.getLocalAuthHeaders()
 );
 let disposeCronResumeListener: (() => void) | null = null;
 
@@ -507,6 +518,30 @@ const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): v
       preload: path.join(__dirname, '../preload/index.js'),
       webviewTag: true, // 启用 webview 标签用于 HTML 预览 / Enable webview tag for HTML preview
     },
+  });
+  const trustedRendererDocuments = [pathToFileURL(path.join(__dirname, '../renderer/index.html')).href];
+  if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL && isTrustedDevDocument(process.env.ELECTRON_RENDERER_URL)) {
+    trustedRendererDocuments.push(process.env.ELECTRON_RENDERER_URL);
+  }
+  // This hook is separate from per-guest onBeforeRequest preview policies.
+  // Strip on every hop so a redirect cannot carry the capability elsewhere.
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['<all_urls>'] }, (details, callback) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      callback({ requestHeaders: coreRequestHeaders(details.requestHeaders, {}, false) });
+      return;
+    }
+    const trusted = trustedCoreRequest({
+      url: details.url,
+      port: backendManager.port,
+      webContentsId: details.webContentsId,
+      expectedWebContentsId: mainWindow.webContents.id,
+      frameIsMain: details.frame === mainWindow.webContents.mainFrame,
+      frameUrl: details.frame?.url,
+      trustedDocuments: trustedRendererDocuments,
+    });
+    callback({
+      requestHeaders: coreRequestHeaders(details.requestHeaders, backendManager.getLocalAuthHeaders(), trusted),
+    });
   });
   // Preview guests use fresh in-memory sessions and no Node/preload bridge.
   // Bind the request policy before the guest is created, not after it loads.

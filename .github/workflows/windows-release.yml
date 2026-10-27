@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    paths-ignore:
+      - release/release-request.json
   pull_request:
   workflow_dispatch:
 permissions:
@@ -62,6 +64,7 @@ jobs:
         with:
           workspaces: host/aioncore -> target
           shared-key: thor-windows-x64-msvc
+          cache-on-failure: true
       - name: Install locked release dependencies
         run: npm ci --ignore-scripts
       - name: Check package, tag and upstream versions
@@ -80,6 +83,27 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo test --locked --workspace
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --locked -p aionui-app --lib local_channel::tests
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --locked -p aionui-app --test local_mode
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --locked -p aionui-runtime --lib agent_env::tests::desktop_local_capability_is_never_part_of_agent_environment
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build and verify isolated Core bundle
+        id: core
+        run: node release/build-host.mjs
+      - name: Retain verified Core for diagnostics
+        if: always() && steps.core.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: thor-core-diagnostic-windows-x64
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+          path: |
+            .thor-local/release/bundle/**
+            .thor-local/release/bundle-provenance.json
+            .thor-local/release/core-local-boundary.json
       - name: Desktop quality gates
         working-directory: desktop/aionui
         run: |
@@ -96,6 +120,8 @@ jobs:
           bun run test --maxWorkers=4
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Build Windows installer
+        env:
+          THOR_REUSE_VERIFIED_HOST: '1'
         run: node release/build-windows.mjs
       - name: Verify installer and update manifest
         run: node release/verify-artifacts.mjs

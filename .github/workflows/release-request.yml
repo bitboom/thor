@@ -1,0 +1,26 @@
+name: Publish reviewed Windows artifact
+on:
+  push:
+    branches: [main]
+    paths:
+      - release/release-request.json
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: thor-public-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'bitboom/thor'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      - name: Validate reviewed request and publish the exact tested artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node release/control/run.mjs

@@ -9,6 +9,7 @@
  */
 
 import { type ChildProcess, spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, statSync } from 'node:fs';
 import { connect, createServer, type Socket } from 'node:net';
 import path from 'node:path';
@@ -222,13 +223,22 @@ export function buildSpawnArgs(config: SpawnConfig): string[] {
  * backend's `/api/system/info` matches what Electron main persists in
  * ProcessEnv('aionui.dir').
  */
-export function buildSpawnEnv(dirs?: BackendDirConfig, codexSqliteHome?: string): NodeJS.ProcessEnv {
+export function buildSpawnEnv(
+  dirs?: BackendDirConfig,
+  codexSqliteHome?: string,
+  localChannel?: { token: string; trustedOrigin?: string }
+): NodeJS.ProcessEnv {
   // PREBUILDS_ONLY protects the packaged Electron process's own node-gyp-build
   // natives (see desktop process/index.ts) and must stay scoped to it. Agent
   // CLIs spawned under aioncore (e.g. cursor-agent) ship natives under
   // build/Release only, and node-gyp-build skips that directory for any
   // non-empty value, aborting the agent before the ACP handshake (#4070).
-  const { PREBUILDS_ONLY: _prebuildsOnly, ...parentEnv } = process.env;
+  const {
+    PREBUILDS_ONLY: _prebuildsOnly,
+    THOR_CORE_LOCAL_TOKEN: _parentToken,
+    THOR_CORE_TRUSTED_ORIGIN: _parentOrigin,
+    ...parentEnv
+  } = process.env;
   return {
     ...parentEnv,
     ...(dirs
@@ -241,6 +251,8 @@ export function buildSpawnEnv(dirs?: BackendDirConfig, codexSqliteHome?: string)
     // Isolate Thor's agent SQLite state while preserving the user's existing
     // CODEX_HOME/authentication. Never copy credentials or rewrite Codex config.
     ...(codexSqliteHome ? { CODEX_SQLITE_HOME: codexSqliteHome } : {}),
+    ...(localChannel ? { THOR_CORE_LOCAL_TOKEN: localChannel.token } : {}),
+    ...(localChannel?.trustedOrigin ? { THOR_CORE_TRUSTED_ORIGIN: localChannel.trustedOrigin } : {}),
   };
 }
 
@@ -521,6 +533,7 @@ async function probeHealthCheckTcpConnect(port: number, timeoutMs = 1_000): Prom
 
 export class BackendLifecycleManager {
   private childProcess: ChildProcess | null = null;
+  private localToken?: string;
   private _port = 0;
   private _status: BackendStatus = 'stopped';
   private _lastDbPath = '';
@@ -543,6 +556,11 @@ export class BackendLifecycleManager {
 
   get status(): BackendStatus {
     return this._status;
+  }
+
+  /** Main-process transport only. Never expose through IPC or renderer config. */
+  getLocalAuthHeaders(): Record<string, string> {
+    return this.localToken ? { 'X-Thor-Local-Token': this.localToken } : {};
   }
 
   private isPeerAlreadyRunningError(error: unknown): boolean {
@@ -682,6 +700,9 @@ export class BackendLifecycleManager {
     });
     console.log(`[aioncore] starting: ${binaryPath} ${args.join(' ')}`);
     const codexSqliteHome = path.join(this.appMeta.userDataPath, 'agent', 'codex', 'sqlite');
+    this.localToken = randomBytes(32).toString('hex');
+    const devRendererUrl = !this.appMeta.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined;
+    const trustedOrigin = devRendererUrl ? new URL(devRendererUrl).origin : undefined;
 
     try {
       ensureBackendStartupDirectory(dbPath);
@@ -698,7 +719,7 @@ export class BackendLifecycleManager {
     try {
       this.childProcess = spawn(binaryPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: buildSpawnEnv(dirs, codexSqliteHome),
+        env: buildSpawnEnv(dirs, codexSqliteHome, { token: this.localToken, trustedOrigin }),
         cwd: dirs?.workDir ?? dbPath,
         detached: process.platform !== 'win32',
         windowsHide: true,
@@ -912,6 +933,7 @@ export class BackendLifecycleManager {
   }
 
   async stop(): Promise<void> {
+    this.localToken = undefined;
     if (!this.childProcess) return;
     const childProcess = this.childProcess;
     this._status = 'stopped';
@@ -959,7 +981,7 @@ export class BackendLifecycleManager {
       diagnostics.healthCheckAttempts += 1;
       diagnostics.healthCheckLastAttemptAfterMs = attemptStartedAt - start;
       try {
-        const response = await fetch(healthCheckUrl);
+        const response = await fetch(healthCheckUrl, { headers: this.getLocalAuthHeaders(), redirect: 'error' });
         if (response.ok) {
           diagnostics.healthCheckElapsedMs = Date.now() - start;
           return { ok: true, diagnostics };

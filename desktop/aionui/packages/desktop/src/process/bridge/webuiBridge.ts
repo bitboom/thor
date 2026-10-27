@@ -20,6 +20,7 @@ import {
   stopDesktopWebUI,
   getDesktopWebUIStatus,
   setDesktopWebUIInitialPassword,
+  assertDesktopWebUIAvailable,
 } from '@process/utils/webuiConfig';
 
 type AdminUsernameResult = { username?: string };
@@ -84,6 +85,8 @@ export function initWebuiBridge(): void {
   });
 
   ipcBridge.webui.start.provider(async (params) => {
+    // Reject before password generation or any preference/credential mutation.
+    assertDesktopWebUIAvailable();
     await maybeSeedInitialPassword();
     const handle = await startDesktopWebUI({
       port: params?.port,

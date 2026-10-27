@@ -3,6 +3,8 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { validateCoreBoundaryProof } from './local-boundary-policy.mjs';
+import { validateNativeDesktopProof } from './native-policy.mjs';
 
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const requireRoot = createRequire(path.join(root, 'package.json'));
@@ -62,6 +64,7 @@ export function validateBundleProvenance(bundle, upstream) {
   const expectedSource = { repository: source.repository, commit: source.commit, patchSha256: source.patch.sha256, policy: source.policy, sdkVersion: source.sdkVersion };
   if (bundle?.schemaVersion !== 1 || bundle.runtimeKey !== 'win32-x64' || bundle.core?.source !== 'host/aioncore') throw new Error('Invalid bundle provenance.');
   if (!/^[a-f0-9]{64}$/.test(bundle.core.sha256) || !/^[a-f0-9]{64}$/.test(bundle.managedResourcesSha256)) throw new Error('Invalid bundled Core digest.');
+  validateCoreBoundaryProof(bundle.core.localBoundary, bundle.core.sha256);
   if (bundle.node?.version !== upstream.managedNode.version || bundle.node.sha256 !== upstream.managedNode.executableSha256 || bundle.node.archiveSha256 !== upstream.managedNode.sha256) throw new Error('Bundled Node provenance does not match pin.');
   if (bundle.officeCli?.version !== office.version || bundle.officeCli.readOnlyWatch !== true || !/^[a-f0-9]{64}$/.test(bundle.officeCli.sha256) || bundle.officeCli.sha256 === pinnedOffice.sha256 || !Number.isSafeInteger(bundle.officeCli.size) || bundle.officeCli.size < 1_000_000 || bundle.officeCli.size > 256 * 1024 * 1024 || JSON.stringify(bundle.officeCli.source) !== JSON.stringify(expectedSource) || !/^[a-f0-9]{64}$/.test(bundle.officeCli.lockSha256) || bundle.core.officeCliLockSha256 !== bundle.officeCli.lockSha256) throw new Error('Bundled OfficeCLI provenance does not match the read-only source pin.');
   if (bundle.core.file !== 'aioncore.exe' || bundle.node.file !== `managed-resources/node/node-v${upstream.managedNode.version}-win-x64/node.exe` || bundle.officeCli.file !== `managed-resources/officecli/${office.version}/${pinnedOffice.name}`) throw new Error('Bundled runtime path does not match the source pin.');
@@ -83,6 +86,7 @@ export function verifyRelease({ output, version, upstream, tag = null, commit = 
   if (sourceSha256 && provenance.source.sha256 !== sourceSha256) throw new Error('Provenance source digest does not match checkout.');
   if (JSON.stringify(provenance.upstream) !== JSON.stringify(upstream)) throw new Error('Build provenance does not match source lock.');
   validateBundleProvenance(provenance.bundle, upstream);
+  validateNativeDesktopProof(provenance.desktopNative, readJson(path.join(root, 'desktop/aionui/package.json')).devDependencies.electron);
   if (provenance.tools?.githubCli?.version !== upstream.githubCli.version || provenance.tools.githubCli.sha256 !== upstream.githubCli.executableSha256 || provenance.tools.githubCli.archiveSha256 !== upstream.githubCli.sha256 || provenance.tools.githubCli.file !== 'tools/gh.exe') throw new Error('Bundled GitHub CLI provenance does not match pin.');
   if (provenance.hub?.commit !== upstream.hub.commit || provenance.hub.indexSha256 !== upstream.hub.indexSha256 || !Array.isArray(provenance.hub.extensions)) throw new Error('Bundled hub provenance does not match pin.');
   if (provenance.source?.path || provenance.bundle?.source?.path) throw new Error('Build provenance contains a machine path.');

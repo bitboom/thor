@@ -83,6 +83,19 @@ pub(crate) struct BoundHttpListener {
 /// their own local listeners. When `config.port == 0`, the OS-selected port is
 /// written back to the config before downstream services are built.
 pub(crate) async fn bind_http_listener(config: &mut AppConfig) -> Result<BoundHttpListener, BootstrapError> {
+    if config.local
+        && config.host != "localhost"
+        && !config
+            .host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
+    {
+        return Err(BootstrapError::new(
+            BootstrapErrorCode::ConfigInvalid,
+            "config.host",
+            "Local mode requires a loopback bind address",
+        ));
+    }
     if config.port != 0 && is_fetch_forbidden_backend_port(config.port) {
         return Err(BootstrapError::new(
             BootstrapErrorCode::ConfigInvalid,

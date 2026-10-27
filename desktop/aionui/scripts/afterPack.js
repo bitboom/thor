@@ -77,6 +77,19 @@ module.exports = async function afterPack(context) {
     throw new Error(`resources directory not found: ${resourcesDir}`);
   }
 
+  if (process.env.AIONUI_THOR_RELEASE === '1' && electronPlatformName === 'win32') {
+    // The Thor release wrapper rebuilt the locked addon for the exact
+    // Electron version. Check packaged bytes and load them in packaged
+    // Electron before NSIS creation; never replace them via bunx downloads.
+    const { execFileSync } = require('node:child_process');
+    execFileSync(
+      process.execPath,
+      [path.resolve(__dirname, '../../../release/native-desktop.mjs'), 'verify-packaged', appOutDir],
+      { stdio: 'inherit', windowsHide: true }
+    );
+    return;
+  }
+
   if (!isCrossCompile && !needsSameArchRebuild && !forceRebuild) {
     console.log(`   ✓ Same architecture, rebuild skipped (set FORCE_NATIVE_REBUILD=true to override)\n`);
     return;
