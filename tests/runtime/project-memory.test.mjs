@@ -1,16 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, rm, link, symlink } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, link, symlink, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { ProjectMemory, parseMemory, serializeMemory } from '../../agent/memory-store.mjs';
 
 const fixture = async run => {
-  const root = await mkdtemp(path.join(tmpdir(), 'thor-memory-'));
+  // Hosted Windows runners may expose TEMP through an 8.3 alias (RUNNER~1).
+  // The memory API intentionally requires a canonical workspace, so fixtures
+  // must resolve that test parent instead of weakening the production guard.
+  const parent = await realpath(tmpdir());
+  const root = await realpath(await mkdtemp(path.join(parent, 'thor-memory-')));
   try { await run(new ProjectMemory(root), root); }
   finally {
-    assert.ok(path.resolve(root).startsWith(path.resolve(tmpdir()) + path.sep));
+    const relative = path.relative(parent, root);
+    assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative));
     await rm(root, { recursive: true, force: true });
   }
 };
