@@ -144,7 +144,7 @@ childProcess.execSync = function mockedExecSync(command) {
     expect(queryScript).toContain("'installer-self-lock'");
     expect(queryScript).toContain('outerInstallerPid');
     expect(queryScript).toContain('currentOutDir');
-    expect(queryScript).toContain("name = 'AionUi installer'");
+    expect(queryScript).toContain("name = 'Thor installer'");
   });
 
   it('continues with the bundled uninstaller when installed-uninstaller repair remains locked', () => {
@@ -194,7 +194,7 @@ childProcess.execSync = function mockedExecSync(command) {
     const files = readdirSync(resourcesDir).filter((file) => file.endsWith('.nsh'));
 
     const allowedMessageBoxes = new Map<string, RegExp[]>([
-      ['installer-errors-sentry.nsh', [/MessageBox MB_YESNO\|MB_ICONSTOP/]],
+      ['installer-errors-sentry.nsh', [/MessageBox MB_OK\|MB_ICONSTOP/]],
       [
         'installer-process-control.nsh',
         [/AIONUI_MSG_FILE_OR_FOLDER_IN_USE_ZH/, /\$\(appRunning\)/, /AIONUI_MSG_CLOSE_OR_REMOVE_PREVIOUS_ZH/],

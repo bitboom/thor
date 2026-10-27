@@ -3,67 +3,19 @@
  * Copyright 2025 AionUi (aionui.com)
  * SPDX-License-Identifier: Apache-2.0
  */
-
 import AionModal from '@renderer/components/base/AionModal';
-import { FEEDBACK_MODULES } from './feedbackModules';
-import { useTalkToButler } from '@/renderer/hooks/assistant/useTalkToButler';
-import { useAuth } from '@/renderer/hooks/context/AuthContext';
-import { uploadFileViaHttp } from '@/renderer/services/FileService';
-import { Button, Input, Select, Message, Upload } from '@arco-design/web-react';
-import type { UploadItem } from '@arco-design/web-react/es/Upload';
-import { Info } from '@icon-park/react';
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import type { RefTextAreaType } from '@arco-design/web-react/es/Input/textarea';
+import { prepareThorFeedback } from '@/common/types/feedbackDiagnostics';
+import { openExternalUrl } from '@/renderer/utils/platform';
+import { Button, Input } from '@arco-design/web-react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  type FeedbackAttachment,
-  type FeedbackEventExtra,
-  type FeedbackEventTags,
-  submitFeedbackReport,
-} from '@/renderer/services/feedback/submitFeedbackReport';
+import type { FeedbackEventExtra, FeedbackEventTags } from '@/renderer/services/feedback/submitFeedbackReport';
 import type {
   FeedbackDiagnosticsExplicitContext,
   FeedbackDiagnosticsProfile,
 } from '@/common/types/feedbackDiagnostics';
-import { captureFeedbackRoute } from '@/renderer/services/feedback/routeContext';
-
 export type { FeedbackEventExtra, FeedbackEventTags } from '@/renderer/services/feedback/submitFeedbackReport';
-
-const DESCRIPTION_MAX_LENGTH = 2000;
-const MAX_SCREENSHOTS = 3;
-const ACCEPTED_IMAGE_TYPES = '.png,.jpg,.jpeg,.gif';
-
-// aionui's AuthUser is { id, username } and carries no email; aionpro's AuthUser
-// does. Read it structurally (no AuthUser type import, no `any`) so this file
-// stays byte-identical across both repos and simply yields undefined whenever
-// the signed-in user has no email (the open-source desktop build is usually
-// logged out entirely), in which case the report is submitted without one.
-const readAccountEmail = (user: unknown): string | undefined => {
-  if (!user || typeof user !== 'object' || !('email' in user)) {
-    return undefined;
-  }
-  const email = (user as { email: unknown }).email;
-  return typeof email === 'string' && email.trim().length > 0 ? email.trim() : undefined;
-};
-
-const getUploadItemKey = (item: Pick<UploadItem, 'name' | 'originFile'>) =>
-  `${item.originFile?.name ?? item.name}_${item.originFile?.size ?? 0}`;
-
-const createPastedImageName = (file: File, index: number) => {
-  if (file.name.trim()) {
-    return file.name;
-  }
-
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const ext = file.type.split('/')[1] || 'png';
-  return `pasted-screenshot-${timestamp}-${index + 1}.${ext}`;
-};
-
-export type PrefilledScreenshot = {
-  filename: string;
-  data: Uint8Array;
-  type: string;
-};
+export type PrefilledScreenshot = { filename: string; data: Uint8Array; type: string };
 
 type FeedbackReportModalProps = {
   visible: boolean;
@@ -79,408 +31,316 @@ type FeedbackReportModalProps = {
   };
 };
 
-const FeedbackReportModal: React.FC<FeedbackReportModalProps> = ({
-  visible,
-  onCancel,
-  defaultModule,
-  prefilledScreenshots,
-  feedbackTags,
-  feedbackExtra,
-  feedbackDiagnosticsContext,
-}) => {
+const FeedbackReportModal: React.FC<FeedbackReportModalProps> = ({ visible, onCancel }) => {
   const { t } = useTranslation();
-  const talkToButler = useTalkToButler();
-  const { user } = useAuth();
-  const accountEmail = readAccountEmail(user);
-
-  const [module, setModule] = useState<string | undefined>(defaultModule);
-  const [description, setDescription] = useState('');
-  const [screenshots, setScreenshots] = useState<UploadItem[]>([]);
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [review, setReview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [diagnosing, setDiagnosing] = useState(false);
-  const descriptionRef = useRef<RefTextAreaType | null>(null);
   const [error, setError] = useState('');
-
-  const resetForm = useCallback(() => {
-    setModule(undefined);
-    setDescription('');
-    setScreenshots([]);
-    setError('');
-  }, []);
-
-  // Auto-focus the description textarea when the modal opens so users can
-  // start typing immediately. Deferred one frame after the open transition so
-  // ModalWrapper's internal focus lock has finished installing its traps.
-  useEffect(() => {
-    if (!visible) return;
-    const id = window.setTimeout(() => {
-      descriptionRef.current?.focus?.();
-    }, 80);
-    return () => window.clearTimeout(id);
-  }, [visible]);
-
-  // Seed form with prefilled module + screenshots whenever the modal (re)opens.
-  // Prefilled screenshots are auto-captured by the one-click feedback entry points
-  // and arrive as raw bytes; wrap them as File/UploadItem so the existing Upload
-  // submit flow handles them identically to user-uploaded images.
-  useEffect(() => {
-    if (!visible) return;
-    setModule(defaultModule);
-    if (prefilledScreenshots && prefilledScreenshots.length > 0) {
-      const items: UploadItem[] = prefilledScreenshots.slice(0, MAX_SCREENSHOTS).map((shot, index) => {
-        // Normalize into a Blob so the BlobPart typing accepts SharedArrayBuffer-backed
-        // Uint8Array values returned over IPC on some Electron/TS target combos.
-        const blob = new Blob([shot.data.slice().buffer as ArrayBuffer], { type: shot.type });
-        const file = new File([blob], shot.filename, { type: shot.type });
-        return {
-          uid: `prefilled-${Date.now()}-${index}`,
-          name: shot.filename,
-          originFile: file,
-          status: 'done',
-        };
-      });
-      setScreenshots(items);
-    }
-  }, [visible, defaultModule, prefilledScreenshots]);
-
-  const handleCancel = useCallback(() => {
-    resetForm();
-    onCancel();
-  }, [onCancel, resetForm]);
-
-  const selectedModule = FEEDBACK_MODULES.find((item) => item.tag === module);
-
-  const handleSubmit = useCallback(async () => {
-    if (!module || !description.trim()) {
+  const [issueUrl, setIssueUrl] = useState('');
+  const [auth, setAuth] = useState<{
+    status: 'authenticated' | 'unauthenticated' | 'missing';
+    executable: string;
+  } | null>(null);
+  const refreshAuth = async () => {
+    const getStatus = window.electronAPI?.getThorFeedbackAuthStatus;
+    if (getStatus) setAuth(await getStatus().catch(() => ({ status: 'missing' as const, executable: 'gh' })));
+  };
+  const [pending, setPending] = useState<string | null | undefined>(undefined);
+  const [reportId, setReportId] = useState<string>(() => crypto.randomUUID());
+  const restoreRecord = (
+    record: {
+      reportId: string;
+      draft: { title: string; body: string } | null;
+      state: 'pending' | 'submitted';
+      url?: string;
+    } | null
+  ) => {
+    if (!record) {
+      setPending(null);
       return;
     }
-
-    setError('');
-    setSubmitting(true);
-
-    try {
-      const attachments = (
-        await Promise.all(
-          screenshots.map(async (item, index) => {
-            if (!item.originFile) {
-              return null;
-            }
-
-            const buffer = await item.originFile.arrayBuffer();
-            const ext = item.originFile.name.split('.').pop() || 'png';
-            return {
-              filename: `screenshot-${index + 1}-${item.originFile.name}`,
-              data: new Uint8Array(buffer),
-              contentType: item.originFile.type || `image/${ext}`,
-            };
-          })
-        )
-      ).filter((item): item is FeedbackAttachment => item !== null);
-
-      await submitFeedbackReport({
-        attachments,
-        collectDbDiagnostics: {
-          explicitContext: feedbackDiagnosticsContext?.explicitContext,
-          explicitProfiles: feedbackDiagnosticsContext?.explicitProfiles,
-          routeAtOpen: feedbackDiagnosticsContext?.routeAtOpen,
-          routeAtSubmit: captureFeedbackRoute(),
-          selectedModule: module,
-        },
-        collectLogs: true,
-        // Silently attach the signed-in user's account email (undefined when
-        // logged out or on the open-source build) so support can follow up
-        // without asking the reporter to type it in.
-        contactEmail: accountEmail,
-        description,
-        extra: feedbackExtra,
-        module,
-        moduleLabel: t(selectedModule?.i18nKey ?? 'settings.bugReportModuleOther'),
-        tags: feedbackTags,
+    setReportId(record.reportId);
+    if (record.draft) {
+      setTitle(record.draft.title);
+      setBody(record.draft.body.replace(/\n\nThor report ID: [0-9a-f-]+$/i, ''));
+    }
+    if (record.state === 'submitted' && record.url) {
+      setPending(null);
+      setIssueUrl(record.url);
+    } else setPending(record.reportId);
+  };
+  useEffect(() => {
+    if (!visible) return;
+    setAuth(null);
+    void refreshAuth();
+    let active = true;
+    setPending(undefined);
+    const getPending = window.electronAPI?.getThorFeedbackPending;
+    if (!getPending) {
+      setPending(null);
+      return;
+    }
+    void getPending()
+      .then((record) => {
+        if (active) restoreRecord(record);
+      })
+      .catch(() => {
+        if (active) setPending('unknown');
       });
-
-      Message.success(t('settings.bugReportSuccess'));
-      resetForm();
-      onCancel();
+    return () => {
+      active = false;
+    };
+  }, [visible]);
+  const draft = useMemo(() => {
+    const sanitized = prepareThorFeedback(title, body);
+    if (!sanitized.body) return sanitized;
+    return prepareThorFeedback(sanitized.title, sanitized.body.slice(0, 9900) + '\n\nThor report ID: ' + reportId);
+  }, [title, body, reportId]);
+  const resolvePending = async () => {
+    if ((!pending && !issueUrl) || !window.electronAPI?.resolveThorFeedbackPending) return;
+    try {
+      await window.electronAPI.resolveThorFeedbackPending(pending || reportId);
+      setPending(null);
+      setIssueUrl('');
+      setTitle('');
+      setBody('');
+      setError('');
+      setReview(false);
+      setReportId(crypto.randomUUID());
     } catch {
-      setError(t('settings.bugReportError'));
+      setError(t('settings.thorFeedback.failed'));
+    }
+  };
+  const openBrowserDraft = async () => {
+    const open = window.electronAPI?.openThorFeedbackInBrowser;
+    if (!open) return;
+    setSubmitting(true);
+    try {
+      await open(draft);
+      setPending(reportId);
+    } catch {
+      const getPending = window.electronAPI?.getThorFeedbackPending;
+      if (getPending)
+        restoreRecord(
+          await getPending().catch(() => ({ reportId: 'unknown', draft: null as null, state: 'pending' as const }))
+        );
+      else setPending('unknown');
+      setError(t('settings.thorFeedback.browserFailed'));
     } finally {
       setSubmitting(false);
     }
-  }, [
-    module,
-    description,
-    accountEmail,
-    screenshots,
-    t,
-    onCancel,
-    resetForm,
-    selectedModule,
-    feedbackExtra,
-    feedbackTags,
-    feedbackDiagnosticsContext,
-  ]);
-
-  // "Solve via chat": hand the report to the AionUi Butler for on-the-spot
-  // diagnosis instead of submitting to the team. The typed description + module
-  // become a structured prompt; screenshots are uploaded to disk so they ride
-  // along in the chat input (reusing the same upload path as pasted images).
-  const handleDiagnose = useCallback(async () => {
-    if (!description.trim()) return;
-    setError('');
-    setDiagnosing(true);
+  };
+  const verifyPending = async () => {
+    if (!pending || !window.electronAPI?.verifyThorFeedback) return;
+    setSubmitting(true);
     try {
-      const files = (
-        await Promise.all(
-          screenshots.map(async (item) => {
-            if (!item.originFile) return null;
-            try {
-              return await uploadFileViaHttp(item.originFile);
-            } catch (uploadError) {
-              console.error('[feedback] failed to upload screenshot for diagnosis:', uploadError);
-              return null;
-            }
-          })
-        )
-      ).filter((path): path is string => typeof path === 'string' && path.length > 0);
-
-      const moduleLabel = t(selectedModule?.i18nKey ?? 'settings.bugReportModuleOther');
-      const prompt = t('settings.talkToButler.prompt.diagnose', {
-        defaultValue:
-          'I ran into a problem with AionUi, please help me diagnose it.\n\n[Module] {{module}}\n[Description] {{description}}\n[Attachments] see the screenshots in the input.\n\nPlease diagnose the cause and tell me how to fix it.',
-        module: moduleLabel,
-        description: description.trim(),
-      });
-
-      await talkToButler({ prompt, files });
-      resetForm();
-      onCancel();
+      const result = await window.electronAPI.verifyThorFeedback(pending);
+      if (result) {
+        setPending(null);
+        setIssueUrl(result.url);
+        setError('');
+      } else setError(t('settings.thorFeedback.notFound'));
     } catch {
-      setError(t('settings.bugReportError'));
+      setError(t('settings.thorFeedback.notFound'));
     } finally {
-      setDiagnosing(false);
+      setSubmitting(false);
     }
-  }, [description, screenshots, selectedModule, t, talkToButler, resetForm, onCancel]);
-
-  const isFormValid = module !== undefined && description.trim().length > 0;
-
-  const appendScreenshotFiles = useCallback((files: File[]) => {
+  };
+  const close = () => {
+    setTitle('');
+    setBody('');
+    setReview(false);
     setError('');
-    setScreenshots((current) => {
-      const merged = [...current];
-      const seen = new Set(current.map(getUploadItemKey));
-
-      files.forEach((file, index) => {
-        if (merged.length >= MAX_SCREENSHOTS) {
-          return;
-        }
-
-        const normalizedFile = file.name.trim()
-          ? file
-          : new File([file], createPastedImageName(file, index), {
-              type: file.type,
-              lastModified: file.lastModified,
-            });
-        const nextItem: UploadItem = {
-          uid: `pasted-${Date.now()}-${index}-${merged.length}`,
-          name: normalizedFile.name,
-          originFile: normalizedFile,
-          status: 'done',
-        };
-
-        const key = getUploadItemKey(nextItem);
-        if (seen.has(key)) {
-          return;
-        }
-
-        seen.add(key);
-        merged.push(nextItem);
-      });
-
-      return merged;
-    });
-  }, []);
-
-  const handleScreenshotChange = useCallback((fileList: UploadItem[]) => {
-    setError('');
-    // Deduplicate by file name + size, then mark as 'done' to hide progress indicators
-    const seen = new Set<string>();
-    const deduped = fileList.filter((f) => {
-      const key = `${f.originFile?.name ?? f.name}_${f.originFile?.size ?? 0}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    setScreenshots(deduped.map((f) => (f.status === 'done' ? f : Object.assign({}, f, { status: 'done' as const }))));
-  }, []);
-
-  const handlePaste = useCallback(
-    (event: ClipboardEvent) => {
-      const files = Array.from(event.clipboardData?.files ?? []).filter((file) => file.type.startsWith('image/'));
-      if (files.length === 0) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      appendScreenshotFiles(files);
-    },
-    [appendScreenshotFiles]
-  );
-
-  useEffect(() => {
-    if (!visible) {
+    setIssueUrl('');
+    setReportId(crypto.randomUUID());
+    onCancel();
+  };
+  const submit = async () => {
+    const submitFeedback = window.electronAPI?.submitThorFeedback;
+    if (!submitFeedback) {
+      setError(t('settings.thorFeedback.desktopOnly'));
       return;
     }
-
-    document.addEventListener('paste', handlePaste);
-    return () => {
-      document.removeEventListener('paste', handlePaste);
-    };
-  }, [handlePaste, visible]);
-
+    setSubmitting(true);
+    setError('');
+    try {
+      const result = await submitFeedback(draft);
+      setIssueUrl(result.url);
+    } catch {
+      const getPending = window.electronAPI?.getThorFeedbackPending;
+      if (getPending)
+        restoreRecord(
+          await getPending().catch(() => ({ reportId: 'unknown', draft: null as null, state: 'pending' as const }))
+        );
+      else setPending('unknown');
+      setError(t('settings.thorFeedback.failed'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
   return (
     <AionModal
       variant='standard'
-      header={{ title: t('settings.bugReportTitle'), showClose: true }}
+      header={{ title: t('settings.thorFeedback.title'), showClose: true }}
       visible={visible}
-      onCancel={handleCancel}
-      onOk={handleSubmit}
-      confirmLoading={submitting}
-      okText={t('settings.bugReportSubmit')}
-      cancelText={t('settings.bugReportCancel')}
-      okButtonProps={{ disabled: !isFormValid }}
+      onCancel={close}
       alignCenter
+      className='w-[min(600px,calc(100vw-32px))] max-w-600px'
       footer={{
         render: () => (
-          <div className='flex items-center justify-between gap-8px'>
-            {/* "Solve via chat" is an alternative self-service path — kept on the
-                left as a borderless text action so it reads as secondary to the
-                primary submit, not as a competing filled button. */}
-            <Button
-              type='text'
-              loading={diagnosing}
-              disabled={!description.trim() || submitting}
-              onClick={() => void handleDiagnose()}
-              data-testid='btn-feedback-diagnose'
-              className='!text-primary-6 hover:!text-primary-5'
-            >
-              {t('settings.talkToButler.solveViaChat', { defaultValue: 'Solve via chat' })}
+          <div className='flex justify-end gap-8px'>
+            <Button onClick={close} disabled={submitting}>
+              {t('settings.thorFeedback.close')}
             </Button>
-            <div className='flex items-center gap-8px'>
-              <Button onClick={handleCancel} className='px-20px min-w-80px' style={{ borderRadius: 8 }}>
-                {t('settings.bugReportCancel')}
+            {!issueUrl && pending === null && review && (
+              <Button
+                disabled={submitting}
+                onClick={() => {
+                  setError('');
+                  setReview(false);
+                }}
+              >
+                {t('settings.thorFeedback.edit')}
               </Button>
+            )}
+            {!issueUrl && !error && pending === null && !review && (
+              <Button type='primary' disabled={!draft.title || !draft.body} onClick={() => setReview(true)}>
+                {t('settings.thorFeedback.review')}
+              </Button>
+            )}
+            {!issueUrl &&
+              !error &&
+              pending === null &&
+              review &&
+              auth &&
+              auth.status !== 'authenticated' &&
+              window.electronAPI?.openThorFeedbackInBrowser && (
+                <Button disabled={submitting} onClick={() => void openBrowserDraft()}>
+                  {t('settings.thorFeedback.openBrowserDraft')}
+                </Button>
+              )}
+            {!issueUrl && !error && pending === null && review && (
               <Button
                 type='primary'
                 loading={submitting}
-                disabled={!isFormValid || diagnosing}
-                onClick={() => void handleSubmit()}
-                className='px-20px min-w-80px'
-                style={{ borderRadius: 8 }}
+                disabled={Boolean(window.electronAPI?.getThorFeedbackAuthStatus) && auth?.status !== 'authenticated'}
+                onClick={() => void submit()}
               >
-                {t('settings.bugReportSubmit')}
+                {t('settings.thorFeedback.submit')}
               </Button>
-            </div>
+            )}
           </div>
         ),
       }}
-      className='w-[min(600px,calc(100vw-32px))] max-w-600px'
-      autoFocus={false}
-      // The feedback modal is global and may be opened from inside another
-      // AionModal (e.g. the Agent editor). Arco's default z-index stacks
-      // modals in mount order, which leaves the feedback modal under the
-      // pre-existing modal when both are open. Bump wrap+mask above the
-      // standard 1001 so feedback always appears on top.
-      wrapStyle={{ zIndex: 1050 }}
-      maskStyle={{ zIndex: 1050 }}
     >
-      <div data-testid='feedback-report-scroll-body' className='overflow-x-hidden'>
-        <div className='flex flex-col gap-16px'>
-          {/* Description */}
-          <div className='flex flex-col gap-4px'>
-            <label className='text-13px text-t-secondary'>
-              {t('settings.bugReportDescriptionLabel')} <span className='text-red-500'>*</span>
-            </label>
-            <Input.TextArea
-              ref={descriptionRef}
-              placeholder={t('settings.bugReportDescriptionPlaceholder')}
-              value={description}
-              onChange={(val) => {
-                setDescription(val);
-                setError('');
-              }}
-              maxLength={DESCRIPTION_MAX_LENGTH}
-              showWordLimit
-              autoSize={{ minRows: 3, maxRows: 6 }}
-            />
-          </div>
-
-          {/* Module Select */}
-          <div className='flex flex-col gap-4px'>
-            <label className='text-13px text-t-secondary'>
-              {t('settings.bugReportModuleLabel')} <span className='text-red-500'>*</span>
-            </label>
-            <Select
-              placeholder={t('settings.bugReportModulePlaceholder')}
-              value={module}
-              onChange={(val) => {
-                setModule(val);
-                setError('');
-              }}
+      <div className='flex flex-col gap-12px'>
+        <p>{t('settings.thorFeedback.intro')}</p>
+        <p>{t('settings.thorFeedback.warning')}</p>
+        {pending ? (
+          <>
+            <div role='alert'>
+              {t('settings.thorFeedback.pending')} {pending}
+            </div>
+            {body && (
+              <pre className='whitespace-pre-wrap break-all bg-fill-1 p-12px'>
+                {draft.title}
+                {'\n\n'}
+                {draft.body}
+              </pre>
+            )}
+            <Button
+              type='text'
+              onClick={() =>
+                void openExternalUrl('https://github.com/bitboom/thor/issues?q=' + encodeURIComponent(pending))
+              }
             >
-              {FEEDBACK_MODULES.map((m) => (
-                <Select.Option key={m.tag} value={m.tag}>
-                  {t(m.i18nKey)}
-                </Select.Option>
-              ))}
-            </Select>
+              {t('settings.thorFeedback.searchReport')}
+            </Button>
+            {window.electronAPI?.verifyThorFeedback && (
+              <Button loading={submitting} onClick={() => void verifyPending()}>
+                {t('settings.thorFeedback.verify')}
+              </Button>
+            )}
+            <Button disabled={submitting} onClick={() => void resolvePending()}>
+              {t('settings.thorFeedback.checked')}
+            </Button>
+          </>
+        ) : pending === undefined ? null : issueUrl ? (
+          <div>
+            <p>{t('settings.thorFeedback.created')}</p>
+            <Button onClick={() => void resolvePending()}>
+              {t('settings.thorFeedback.archive', { defaultValue: 'Archive this report' })}
+            </Button>
+            <Button type='text' onClick={() => void openExternalUrl(issueUrl)}>
+              {issueUrl}
+            </Button>
           </div>
-
-          {/* Screenshot Upload */}
-          <div className='flex flex-col gap-4px'>
-            <label className='text-13px text-t-secondary'>
-              {t('settings.bugReportScreenshotLabel')}
-              {screenshots.length > 0 && (
-                <span data-testid='feedback-report-screenshot-count'>
-                  {' '}
-                  {t('settings.bugReportScreenshotUploaded', { count: screenshots.length })}
-                </span>
-              )}
+        ) : review ? (
+          <>
+            <strong>{t('settings.thorFeedback.preview')}</strong>
+            <pre className='whitespace-pre-wrap break-all bg-fill-1 p-12px' data-testid='thor-feedback-preview'>
+              {draft.title}
+              {'\n\n'}
+              {draft.body}
+            </pre>
+            <p>{t('settings.thorFeedback.auth')}</p>
+            {auth && (
+              <div>
+                <p>
+                  {t(
+                    auth.status === 'authenticated'
+                      ? 'settings.thorFeedback.authReady'
+                      : auth.status === 'missing'
+                        ? 'settings.thorFeedback.authMissing'
+                        : 'settings.thorFeedback.authNeeded'
+                  )}
+                </p>
+                {auth.status !== 'authenticated' && (
+                  <>
+                    <p>{t('settings.thorFeedback.loginGuide')}</p>
+                    <code className='break-all'>
+                      {' '}
+                      &amp; &quot;{auth.executable}&quot; auth login --hostname github.com --web
+                    </code>
+                    <div>
+                      <Button onClick={() => void refreshAuth()}>{t('settings.thorFeedback.checkAuth')}</Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <label>
+              {t('settings.thorFeedback.titleLabel')}
+              <Input value={title} onChange={setTitle} maxLength={500} />
             </label>
-            <div data-testid='feedback-report-upload-trigger'>
-              <Upload
-                listType='picture-card'
-                multiple
-                accept={ACCEPTED_IMAGE_TYPES}
-                autoUpload={false}
-                fileList={screenshots}
-                onChange={handleScreenshotChange}
-                limit={MAX_SCREENSHOTS}
-                imagePreview
+            <label>
+              {t('settings.thorFeedback.description')}
+              <Input.TextArea
+                value={body}
+                onChange={setBody}
+                maxLength={12000}
+                autoSize={{ minRows: 5, maxRows: 10 }}
               />
-            </div>
-          </div>
-
-          {/* Auto-info Banner */}
-          <div className='flex'>
-            <div
-              data-testid='feedback-report-auto-info'
-              className='inline-flex max-w-full items-start gap-6px px-10px py-8px bg-fill-1 rd-8px text-12px leading-18px text-t-tertiary'
-            >
-              <Info theme='outline' size='14' className='mt-2px flex-shrink-0' />
-              <span>{t('settings.bugReportAutoInfo')}</span>
-            </div>
-          </div>
-
-          {error ? (
-            <div className='px-12px py-8px bg-red-50 dark:bg-red-900/20 rd-8px text-13px text-red-500 b-1px b-solid b-red-200 dark:b-red-800'>
+            </label>
+          </>
+        )}
+        {error && (
+          <>
+            <div className='text-danger' role='alert'>
               {error}
             </div>
-          ) : null}
-        </div>
+            <Button type='text' onClick={() => void openExternalUrl('https://github.com/bitboom/thor/issues')}>
+              {t('settings.thorFeedback.openIssues')}
+            </Button>
+          </>
+        )}
       </div>
     </AionModal>
   );
 };
-
 export default FeedbackReportModal;

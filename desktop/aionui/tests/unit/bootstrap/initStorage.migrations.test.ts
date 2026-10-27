@@ -31,3 +31,19 @@ describe('initStorage.migrations', () => {
     expect(true).toBe(true);
   });
 });
+
+vi.mock('@/common', () => ({ ipcBridge: { deepLink: { received: { emit: vi.fn() } } } }));
+import { parseDeepLinkUrl, PROTOCOL_SCHEME } from '@/process/utils/deepLink';
+
+describe('Thor deep links', () => {
+  it('accepts Thor links', () => {
+    expect(PROTOCOL_SCHEME).toBe('thor');
+    expect(parseDeepLinkUrl('thor://add-provider?name=demo')).toEqual({
+      action: 'add-provider',
+      params: { name: 'demo' },
+    });
+  });
+  it('does not accept links owned by AionUi', () => {
+    expect(parseDeepLinkUrl('aionui://add-provider?name=demo')).toBeNull();
+  });
+});

@@ -21,8 +21,8 @@ const INSTALLER_ERROR_SCENARIOS = [
     id: 'uninstaller-copy-or-rebuild-failed',
     defineName: 'AIONUI_E_UNINSTALLER_COPY_OR_REBUILD_FAILED',
     code: 'E1001',
-    message: 'AionUi could not repair the installed uninstaller.',
-    action: 'Close AionUi, restart Windows if needed, then run this installer again.',
+    message: 'Thor could not repair the installed uninstaller.',
+    action: 'Close Thor, restart Windows if needed, then run this installer again.',
     diagnostics:
       'scenario=uninstaller-copy-or-rebuild-failed phase=uninstaller-repair result=copy-failed-retry-bundled-missing',
   },
@@ -30,7 +30,7 @@ const INSTALLER_ERROR_SCENARIOS = [
     id: 'old-uninstall-failed',
     defineName: 'AIONUI_E_OLD_UNINSTALL_FAILED',
     code: 'E1002',
-    message: 'The previous AionUi uninstaller returned an error.',
+    message: 'The previous Thor uninstaller returned an error.',
     action:
       'Close any program using the install folder, then run this installer again. If no program is listed, restart Windows and run this installer again.',
     diagnostics: 'scenario=old-uninstall-failed phase=old-uninstaller exitCode=2',
@@ -39,23 +39,23 @@ const INSTALLER_ERROR_SCENARIOS = [
     id: 'install-dir-remove-or-locked',
     defineName: 'AIONUI_E_INSTALL_DIR_REMOVE_OR_LOCKED',
     code: 'E1003',
-    message: 'AionUi could not remove or replace the previous installation directory.',
-    action: 'Close AionUi and any program using the install folder, then run this installer again.',
+    message: 'Thor could not remove or replace the previous installation directory.',
+    action: 'Close Thor and any program using the install folder, then run this installer again.',
     diagnostics: 'scenario=install-dir-remove-or-locked phase=atomic-failed failedPath=install-dir',
   },
   {
     id: 'extract-failed',
     defineName: 'AIONUI_E_EXTRACT_FAILED',
     code: 'E1010',
-    message: 'AionUi could not extract the application files correctly.',
+    message: 'Thor could not extract the application files correctly.',
     action: 'Download a fresh installer and run it again.',
-    diagnostics: 'scenario=extract-failed phase=extract method=zip missing=AionUi.exe',
+    diagnostics: 'scenario=extract-failed phase=extract method=zip missing=Thor.exe',
   },
   {
     id: 'disk-insufficient',
     defineName: 'AIONUI_E_DISK_INSUFFICIENT',
     code: 'E1020',
-    message: 'AionUi cannot continue because the target disk does not have enough free space.',
+    message: 'Thor cannot continue because the target disk does not have enough free space.',
     action: 'Free disk space on the target drive, then run this installer again.',
     diagnostics: 'scenario=disk-insufficient phase=preflight requiredMb=1024 availableMb=0',
   },
@@ -63,7 +63,7 @@ const INSTALLER_ERROR_SCENARIOS = [
     id: 'bundled-aioncore-incomplete',
     defineName: 'AIONUI_E_BUNDLED_AIONCORE_INCOMPLETE',
     code: 'E1030',
-    message: 'AionUi installed, but the bundled AionCore resources are incomplete.',
+    message: 'Thor installed, but the bundled AionCore resources are incomplete.',
     action: 'Download a fresh installer and run it again.',
     diagnostics: 'scenario=bundled-aioncore-incomplete phase=verify-bundled-aioncore runtime=win32-x64 result=1',
   },
@@ -71,8 +71,8 @@ const INSTALLER_ERROR_SCENARIOS = [
     id: 'core-app-files-incomplete',
     defineName: 'AIONUI_E_CORE_APP_FILES_INCOMPLETE',
     code: 'E1031',
-    message: 'AionUi installation is incomplete because a required application file is missing.',
-    action: 'Reinstall AionUi or download a newer installer.',
+    message: 'Thor installation is incomplete because a required application file is missing.',
+    action: 'Reinstall Thor or download a newer installer.',
     diagnostics: 'scenario=core-app-files-incomplete phase=verify-required-file missing=resources/app.asar',
   },
   {
@@ -80,14 +80,14 @@ const INSTALLER_ERROR_SCENARIOS = [
     defineName: 'AIONUI_E_ARCH_MISMATCH',
     code: 'E1040',
     message: 'Installation package architecture mismatch.',
-    action: 'Download the AionUi installer that matches this Windows architecture, then run it again.',
+    action: 'Download the Thor installer that matches this Windows architecture, then run it again.',
     diagnostics: 'scenario=arch-mismatch phase=arch-check target=x64 actual=arm64',
   },
   {
     id: 'active-installer-conflict',
     defineName: 'AIONUI_E_ACTIVE_INSTALLER_CONFLICT',
     code: 'E1050',
-    message: 'Another AionUi installer appears to still be active.',
+    message: 'Another Thor installer appears to still be active.',
     action: 'Close the other installer window or wait for it to finish, then run this installer again.',
     diagnostics: 'scenario=active-installer-conflict phase=active-installer-marker state=active',
   },
@@ -95,15 +95,15 @@ const INSTALLER_ERROR_SCENARIOS = [
     id: 'registry-state-invalid',
     defineName: 'AIONUI_E_REGISTRY_STATE_INVALID',
     code: 'E1060',
-    message: 'AionUi found an invalid previous-install registry state.',
-    action: 'Uninstall the old AionUi from Windows Settings, then run this installer again.',
+    message: 'Thor found an invalid previous-install registry state.',
+    action: 'Uninstall the old Thor from Windows Settings, then run this installer again.',
     diagnostics: 'scenario=registry-state-invalid phase=registry-heal installLocation=invalid uninstallString=missing',
   },
   {
     id: 'active-marker-write-failed',
     defineName: 'AIONUI_E_ACTIVE_MARKER_WRITE_FAILED',
     code: 'E1070',
-    message: 'AionUi could not write the active-installer marker.',
+    message: 'Thor could not write the active-installer marker.',
     action: 'Restart Windows, then run this installer again.',
     diagnostics: 'scenario=active-marker-write-failed phase=active-installer-marker-write result=failed',
   },
@@ -314,8 +314,8 @@ function Find-FailureWindow([string]$Code, [int]$TimeoutSec = 90) {
     $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, $windowCond)
     foreach ($window in $windows) {
       $text = Get-WindowText $window
-      if ($text -like "*AionUi installation failed ($Code)*" -or
-          ($text -like "*($Code)*" -and $text -like '*Send this installer failure report*')) {
+      if ($text -like "*Thor installation failed ($Code)*" -or
+          ($text -like "*($Code)*" -and $text -like '*Installer diagnostics stay on this computer*')) {
         return [ordered]@{ window = $window; text = $text; title = $window.Current.Name }
       }
     }
@@ -329,12 +329,12 @@ $proc = Start-Process -FilePath $ExePath -PassThru
 try {
   $failure = Find-FailureWindow $Code
   foreach ($required in @(
-    "AionUi installation failed ($Code)",
+    "Thor installation failed ($Code)",
     "scenario=$ScenarioId",
     'Suggested action:',
     'Diagnostics:',
     'Installer log:',
-    'Send this installer failure report'
+    'Installer diagnostics stay on this computer'
   )) {
     if ($failure.text -notlike "*$required*") {
       throw "Failure dialog for $Code is missing: $required"
@@ -347,19 +347,15 @@ try {
   if ($failure.text -like '*Blocking diagnostics:*') {
     throw "Failure dialog for $Code still uses the old Blocking diagnostics label."
   }
-  if ($Answer -eq 'yes') {
-    $yesZh = [string][char]26159
-    $buttons = @('Yes', $yesZh, "$yesZh(Y)", "$yesZh(&Y)")
-  } else {
-    $noZh = [string][char]21542
-    $buttons = @('No', $noZh, "$noZh(N)", "$noZh(&N)")
-  }
+  $okZh = ([string][char]30830) + [char]23450
+  $okKo = ([string][char]54869) + [char]51064
+  $buttons = @('OK', $okZh, "$okZh(O)", "$okZh(&O)", $okKo, "$okKo(&O)")
   if (-not (Try-ClickWindowButton $failure.window $buttons)) {
-    throw "$Answer button not found for $Code failure dialog."
+    throw "OK button not found for $Code failure dialog."
   }
 
   if (-not $proc.WaitForExit(60000)) {
-    throw "Harness did not exit after declining report for $Code."
+    throw "Harness did not exit after dismissing diagnostics for $Code."
   }
   if ($proc.ExitCode -ne 2) {
     throw "Harness exited with $($proc.ExitCode) for $Code; expected 2."
@@ -381,7 +377,7 @@ function createHarnessNsi({ exePath, logPath, projectRoot, scenario }) {
   const detail = `${scenario.diagnostics} smoke=messagebox`;
   return `
 Unicode true
-Name "AionUi Failure MessageBox Smoke"
+Name "Thor Failure MessageBox Smoke"
 OutFile "${nsisQuote(exePath)}"
 RequestExecutionLevel user
 SilentInstall normal
@@ -397,7 +393,7 @@ SilentInstall normal
 !include "${nsisQuote(path.join(projectRoot, 'resources', 'windows', 'installer-errors-sentry.nsh'))}"
 
 Section
-  StrCpy $INSTDIR "$TEMP\\AionUi-messagebox-smoke"
+  StrCpy $INSTDIR "$TEMP\\Thor-messagebox-smoke"
   StrCpy $AionUiSessionId "smokembox-${nsisQuote(scenario.code)}"
   StrCpy $AionUiIsUpdated "1"
   StrCpy $AionUiSessionLogPath "${nsisQuote(logPath)}"
@@ -460,8 +456,6 @@ function runHarness({ autoDecline, compileOnly, makensis, scenario }) {
     `aionui-installer-messagebox-smoke-${code}-${new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-')}-log.jsonl`
   );
   const automationPath = path.join(root, 'auto-decline.ps1');
-  const reportStatusPath = path.join(process.env.TEMP || tmpdir(), 'aionui-installer-report.json');
-
   copyHarnessProject(projectRoot);
   writeAutoDeclineScript(automationPath);
   writeFileSync(nsiPath, createHarnessNsi({ exePath, logPath, projectRoot, scenario }), 'utf8');
@@ -481,12 +475,9 @@ function runHarness({ autoDecline, compileOnly, makensis, scenario }) {
     }
 
     if (autoDecline) {
-      const answer = autoDecline === 'consent' ? 'yes' : 'no';
-      const expectedReportReason = autoDecline === 'consent' ? 'empty-dsn' : 'user-declined';
-      rmSync(reportStatusPath, { force: true });
-      console.log(
-        `[failure-messagebox] ${code}: launching harness and auto-${answer === 'yes' ? 'consenting to' : 'declining'} report...`
-      );
+      const answer = 'ok';
+      const expectedReportReason = 'privacy-disabled';
+      console.log(`[failure-messagebox] ${code}: launching harness and dismissing local diagnostics...`);
       const run = spawnSync(
         'powershell.exe',
         [
@@ -506,34 +497,19 @@ function runHarness({ autoDecline, compileOnly, makensis, scenario }) {
       if (run.status !== 0) {
         process.stdout.write(run.stdout || '');
         process.stderr.write(run.stderr || '');
-        throw new Error(`auto-decline harness failed for ${code} with exit ${run.status}`);
+        throw new Error(`auto-dismiss harness failed for ${code} with exit ${run.status}`);
       }
       verifyFailureLog(logPath, scenario, expectedReportReason);
-      if (autoDecline === 'consent') {
-        if (!existsSync(reportStatusPath)) {
-          throw new Error(`report status file missing for ${code}: ${reportStatusPath}`);
-        }
-        const status = JSON.parse(readFileSync(reportStatusPath, 'utf8'));
-        if (status.code !== code) {
-          throw new Error(`report status code mismatch for ${code}: ${status.code}`);
-        }
-        if (status.status !== 'skipped' || status.reason !== 'empty-dsn') {
-          throw new Error(`unexpected report status for ${code}: ${JSON.stringify(status)}`);
-        }
-        if (typeof status.copyText !== 'string' || !status.copyText.includes(`AionUi installer failure ${code}`)) {
-          throw new Error(`report copyText missing support payload for ${code}`);
-        }
-      }
       console.log(`[failure-messagebox] ${code}: e2e ok: ${logPath}`);
-      return { code, exePath, logPath, mode: 'auto-decline' };
+      return { code, exePath, logPath, mode: 'auto-dismiss' };
     }
 
-    console.log('[failure-messagebox] launching harness. Click No to close without attempting report upload.');
+    console.log('[failure-messagebox] launching harness. Click OK to close the local diagnostics.');
     const run = spawnSync(exePath, [], { stdio: 'inherit' });
     if (run.status !== 2) {
       throw new Error(`harness exited with ${run.status}; expected installer failure exit code 2`);
     }
-    verifyFailureLog(logPath, scenario, 'user-declined');
+    verifyFailureLog(logPath, scenario, 'privacy-disabled');
     return { code, exePath, logPath, mode: 'manual' };
   } finally {
     if (compileOnly || autoDecline || process.argv.includes('--cleanup')) {
@@ -568,6 +544,7 @@ function main() {
   const allScenarios = process.argv.includes('--all-scenarios') || process.argv.includes('--all-codes');
   const autoConsent = process.argv.includes('--auto-consent');
   const autoDecline = process.argv.includes('--auto-decline');
+  const autoDismiss = autoConsent || autoDecline || process.argv.includes('--auto-dismiss');
   if (autoConsent && autoDecline) {
     throw new Error('Use only one of --auto-consent or --auto-decline.');
   }
@@ -581,7 +558,7 @@ function main() {
   for (const scenario of selectedScenarios) {
     results.push(
       runHarness({
-        autoDecline: autoConsent ? 'consent' : autoDecline ? 'decline' : '',
+        autoDecline: autoDismiss ? 'dismiss' : '',
         compileOnly,
         makensis,
         scenario,
@@ -596,7 +573,7 @@ function main() {
           coveredCodes: results.map((result) => result.code),
           coveredScenarios: selectedScenarios.map((scenario) => scenario.id),
           count: results.length,
-          mode: compileOnly ? 'compile-only' : autoConsent ? 'auto-consent' : autoDecline ? 'auto-decline' : 'manual',
+          mode: compileOnly ? 'compile-only' : autoDismiss ? 'auto-dismiss' : 'manual',
         },
         null,
         2

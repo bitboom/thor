@@ -11,6 +11,7 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { mkdirSync, statSync } from 'node:fs';
 import { connect, createServer, type Socket } from 'node:net';
+import path from 'node:path';
 import { cleanupRegisteredAgentProcesses } from './agent-process-registry.js';
 import type { AppMetadata, BackendBinaryResolver } from './types.js';
 
@@ -221,19 +222,25 @@ export function buildSpawnArgs(config: SpawnConfig): string[] {
  * backend's `/api/system/info` matches what Electron main persists in
  * ProcessEnv('aionui.dir').
  */
-export function buildSpawnEnv(dirs?: BackendDirConfig): NodeJS.ProcessEnv {
+export function buildSpawnEnv(dirs?: BackendDirConfig, codexSqliteHome?: string): NodeJS.ProcessEnv {
   // PREBUILDS_ONLY protects the packaged Electron process's own node-gyp-build
   // natives (see desktop process/index.ts) and must stay scoped to it. Agent
   // CLIs spawned under aioncore (e.g. cursor-agent) ship natives under
   // build/Release only, and node-gyp-build skips that directory for any
   // non-empty value, aborting the agent before the ACP handshake (#4070).
   const { PREBUILDS_ONLY: _prebuildsOnly, ...parentEnv } = process.env;
-  if (!dirs) return parentEnv;
   return {
     ...parentEnv,
-    AIONUI_CACHE_DIR: dirs.cacheDir,
-    AIONUI_WORK_DIR: dirs.workDir,
-    AIONUI_LOG_DIR: dirs.logDir,
+    ...(dirs
+      ? {
+          AIONUI_CACHE_DIR: dirs.cacheDir,
+          AIONUI_WORK_DIR: dirs.workDir,
+          AIONUI_LOG_DIR: dirs.logDir,
+        }
+      : {}),
+    // Isolate Thor's agent SQLite state while preserving the user's existing
+    // CODEX_HOME/authentication. Never copy credentials or rewrite Codex config.
+    ...(codexSqliteHome ? { CODEX_SQLITE_HOME: codexSqliteHome } : {}),
   };
 }
 
@@ -674,6 +681,7 @@ export class BackendLifecycleManager {
       recoverCorruptedDatabase: launchFlags.recoverCorruptedDatabase === true,
     });
     console.log(`[aioncore] starting: ${binaryPath} ${args.join(' ')}`);
+    const codexSqliteHome = path.join(this.appMeta.userDataPath, 'agent', 'codex', 'sqlite');
 
     try {
       ensureBackendStartupDirectory(dbPath);
@@ -681,6 +689,7 @@ export class BackendLifecycleManager {
       ensureBackendStartupDirectory(dirs?.cacheDir);
       ensureBackendStartupDirectory(dirs?.workDir);
       ensureBackendStartupDirectory(dirs?.logDir);
+      ensureBackendStartupDirectory(codexSqliteHome);
     } catch (error) {
       this._status = 'error';
       throw makeStartupError('spawn', 'aioncore startup directory preparation failed', error);
@@ -689,9 +698,10 @@ export class BackendLifecycleManager {
     try {
       this.childProcess = spawn(binaryPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: buildSpawnEnv(dirs),
+        env: buildSpawnEnv(dirs, codexSqliteHome),
         cwd: dirs?.workDir ?? dbPath,
         detached: process.platform !== 'win32',
+        windowsHide: true,
       });
     } catch (error) {
       this._status = 'error';

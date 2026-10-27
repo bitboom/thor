@@ -1414,5 +1414,41 @@
   "crossSessionMessageDesc": "Aracıların diğer sohbetlerinize mesaj göndermesine izin verir. Kapatmak giriş alanındaki @@ sohbet etiketini de devre dışı bırakır.",
   "crossSessionMessageDisabledBanner": "Sohbetler arası mesajlar kapalı, @@ sohbet etiketi kullanılamıyor.",
   "crossSessionMessageResume": "Yeniden aç",
-  "crossSessionMessageUpdateFailed": "Sohbetler arası mesaj ayarı güncellenemedi"
+  "crossSessionMessageUpdateFailed": "Sohbetler arası mesaj ayarı güncellenemedi",
+  "thorFeedback": {
+    "title": "Thor feedback",
+    "intro": "This posts text to the public bitboom/thor repository. Logs, screenshots and documents are not attached automatically.",
+    "warning": "Automatic redaction cannot find every sensitive value. Check that the text is safe to publish.",
+    "close": "Close",
+    "edit": "Edit",
+    "review": "Review",
+    "submit": "Submit GitHub issue",
+    "created": "Issue created.",
+    "preview": "Exact title and body to submit",
+    "auth": "Submission uses your existing GitHub CLI authentication.",
+    "titleLabel": "Title",
+    "description": "Description",
+    "desktopOnly": "Submission is available in the desktop app.",
+    "failed": "The submission result is uncertain. An issue may already exist; check GitHub before retrying. Also check GitHub CLI authentication and repository access.",
+    "openIssues": "Check GitHub issues",
+    "pending": "A previous submission has an unknown result. Check GitHub for this report ID before continuing:",
+    "searchReport": "Search GitHub for report ID",
+    "checked": "I checked GitHub; continue",
+    "authReady": "GitHub CLI is authenticated.",
+    "authMissing": "GitHub CLI was not found.",
+    "authNeeded": "Sign in to GitHub CLI first.",
+    "loginGuide": "Run this command in PowerShell, complete sign-in, then check again. If the CLI is missing, install it and restart Thor.",
+    "checkAuth": "Check sign-in again",
+    "openBrowserDraft": "Open issue draft in browser",
+    "browserFailed": "Could not open the browser draft. Check whether an issue was created.",
+    "verify": "Verify issue creation",
+    "notFound": "No matching issue was found yet. Confirm it was submitted on GitHub and check again shortly."
+  },
+  "thorSample": {
+    "description": "Try MCP with synthetic mail and attachments. No real account or company data is connected.",
+    "add": "Add sample mail MCP",
+    "added": "Sample mail MCP added",
+    "success": "Sample mail MCP connected. Select it in a new conversation.",
+    "failed": "Could not connect the sample mail MCP."
+  }
 }

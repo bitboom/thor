@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import fs from 'fs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/common/platform/bridge', () => ({
   bridge: {
@@ -76,150 +75,17 @@ const getDownloadHandler = async () => {
   return lastCall[0];
 };
 
-const getDownloadHandlers = async () => {
-  vi.resetModules();
-  const { initUpdateBridge } = await import('@process/bridge/updateBridge');
-  const { ipcBridge } = await import('@/common');
-
-  initUpdateBridge();
-
-  const downloadProvider = vi.mocked(ipcBridge.update.download.provider);
-  const cancelProvider = vi.mocked(ipcBridge.update.cancelDownload.provider);
-  const downloadCall = downloadProvider.mock.calls.at(-1);
-  const cancelCall = cancelProvider.mock.calls.at(-1);
-  if (!downloadCall) throw new Error('update.download handler not registered');
-  if (!cancelCall) throw new Error('update.download.cancel handler not registered');
-  return {
-    download: downloadCall[0],
-    cancel: cancelCall[0],
-    ipcBridge,
-  };
-};
-
-describe('updateBridge manual download dedupe', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => new Promise<Response>(() => {}))
-    );
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it('reuses the active manual download for the same URL, fallback URL, and file name', async () => {
+describe('manual executable download is disabled', () => {
+  it('rejects valid-looking and tampered requests without downloading or emitting progress', async () => {
     const handler = await getDownloadHandler();
-    const request = {
-      url: 'https://static.aionui.com/releases/2.2.0/AionUi-2.2.0-mac-arm64.dmg',
-      fallbackUrl: 'https://github.com/iOfficeAI/AionUi/releases/download/v2.2.0/AionUi-2.2.0-mac-arm64.dmg',
-      file_name: 'AionUi-2.2.0-mac-arm64.dmg',
-    };
-
-    const first = await handler({
-      ...request,
-      downloadId: 'first-download',
-    });
-    const second = await handler({
-      ...request,
-      downloadId: 'second-download',
-    });
-
-    expect(first.success).toBe(true);
-    expect(second.success).toBe(true);
-    expect(second.data).toEqual(first.data);
-    expect(first.data?.downloadId).toBe('first-download');
-  });
-
-  it('creates a new manual download after the prior matching task reaches a terminal state', async () => {
-    fs.mkdirSync('/tmp/aionui-update-dedupe-test', { recursive: true });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        headers: new Headers({ 'content-length': '0' }),
-        body: {
-          getReader: () => ({
-            read: async () => ({ done: true, value: undefined }),
-          }),
-        },
-      })
-    );
-
-    const handler = await getDownloadHandler();
-    const request = {
-      url: 'https://static.aionui.com/releases/2.2.0/AionUi-2.2.0-mac-arm64.dmg',
-      fallbackUrl: 'https://github.com/iOfficeAI/AionUi/releases/download/v2.2.0/AionUi-2.2.0-mac-arm64.dmg',
-      file_name: 'AionUi-2.2.0-mac-arm64.dmg',
-    };
-
-    const first = await handler({
-      ...request,
-      downloadId: 'first-download',
-    });
-
-    const { ipcBridge } = await import('@/common');
-    await expect
-      .poll(() =>
-        vi.mocked(ipcBridge.update.downloadProgress.emit).mock.calls.some(([evt]) => evt.status === 'completed')
-      )
-      .toBe(true);
-
-    const second = await handler({
-      ...request,
-      downloadId: 'second-download',
-    });
-
-    expect(first.success).toBe(true);
-    expect(second.success).toBe(true);
-    expect(first.data?.downloadId).toBe('first-download');
-    expect(second.data?.downloadId).toBe('second-download');
-  });
-
-  it('cancels an active manual download by download id and clears its dedupe slot', async () => {
-    fs.mkdirSync('/tmp/aionui-update-dedupe-test', { recursive: true });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((_url: string, init?: RequestInit) => {
-        const signal = init?.signal;
-        return new Promise<Response>((_resolve, reject) => {
-          signal?.addEventListener('abort', () => {
-            reject(new DOMException('aborted', 'AbortError'));
-          });
-        });
-      })
-    );
-
-    const { download, cancel, ipcBridge } = await getDownloadHandlers();
-    const request = {
-      url: 'https://static.aionui.com/releases/2.2.0/AionUi-2.2.0-mac-arm64.dmg',
-      fallbackUrl: 'https://github.com/iOfficeAI/AionUi/releases/download/v2.2.0/AionUi-2.2.0-mac-arm64.dmg',
-      file_name: 'AionUi-2.2.0-mac-arm64.dmg',
-    };
-
-    const first = await download({
-      ...request,
-      downloadId: 'first-download',
-    });
-    const cancelResult = await cancel({ downloadId: 'first-download' });
-
-    expect(first.success).toBe(true);
-    expect(cancelResult).toEqual({ success: true });
-    await expect
-      .poll(() =>
-        vi
-          .mocked(ipcBridge.update.downloadProgress.emit)
-          .mock.calls.some(([evt]) => evt.downloadId === 'first-download' && evt.status === 'cancelled')
-      )
-      .toBe(true);
-
-    const second = await download({
-      ...request,
-      downloadId: 'second-download',
-    });
-
-    expect(second.success).toBe(true);
-    expect(second.data?.downloadId).toBe('second-download');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    for (const url of [
+      'https://github.com/bitboom/thor/releases/download/v2.2.0/Thor.exe',
+      'https://example.com/bad.exe',
+    ]) {
+      expect((await handler({ url, file_name: 'Thor.exe' })).success).toBe(false);
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 });

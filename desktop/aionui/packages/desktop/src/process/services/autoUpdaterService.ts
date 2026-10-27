@@ -24,7 +24,7 @@ import {
   recordAutoUpdateQuitAndInstall,
   recordAutoUpdateStatus,
 } from './autoUpdateDiagnostics';
-import { buildCdnFeedOptions } from './updateFeed';
+import { buildReleaseFeedOptions } from './updateFeed';
 
 const FORCE_DEV_AUTO_UPDATE_ENV = 'AIONUI_FORCE_DEV_AUTO_UPDATE';
 const DEBUG_AUTO_UPDATE_CURRENT_VERSION_ENV = 'AIONUI_DEBUG_AUTO_UPDATE_CURRENT_VERSION';
@@ -131,7 +131,7 @@ class AutoUpdaterService extends EventEmitter {
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
     this.configureDevAutoUpdateDebug();
-    const cdnFeedOptions = buildCdnFeedOptions();
+    const releaseFeedOptions = buildReleaseFeedOptions();
 
     // Set the correct update channel based on platform and architecture before
     // any update checks are performed
@@ -140,11 +140,11 @@ class AutoUpdaterService extends EventEmitter {
       autoUpdater.channel = channel;
       log.info(`Update channel set to: ${channel}`);
     }
-    autoUpdater.setFeedURL(cdnFeedOptions);
-    log.info('Update feed set to CDN provider');
-    log.debug('[auto-update] CDN feed configured', {
-      provider: cdnFeedOptions.provider,
-      url: cdnFeedOptions.url,
+    autoUpdater.setFeedURL(releaseFeedOptions);
+    log.info('Update feed set to Thor GitHub releases');
+    log.debug('[auto-update] Release feed configured', {
+      provider: releaseFeedOptions.provider,
+      repository: `${releaseFeedOptions.owner}/${releaseFeedOptions.repo}`,
       channel: channel ?? 'latest',
       platform: process.platform,
       arch: process.arch,
@@ -194,11 +194,12 @@ class AutoUpdaterService extends EventEmitter {
    */
   private ensureDevUpdateConfig(): void {
     try {
-      const cdnFeedOptions = buildCdnFeedOptions();
+      const releaseFeedOptions = buildReleaseFeedOptions();
       const devConfig = [
-        'provider: generic',
-        `url: ${cdnFeedOptions.url}`,
-        'updaterCacheDirName: com.aionui.app',
+        'provider: github',
+        `owner: ${releaseFeedOptions.owner}`,
+        `repo: ${releaseFeedOptions.repo}`,
+        'updaterCacheDirName: thor-updater',
         '',
       ].join('\n');
       const configPath = path.join(app.getPath('userData'), 'dev-app-update.yml');
@@ -216,7 +217,7 @@ class AutoUpdaterService extends EventEmitter {
     }
 
     try {
-      const safeCwd = path.join(app.getPath('temp'), 'aionui-updater-cwd');
+      const safeCwd = path.join(app.getPath('temp'), 'thor-updater-cwd');
       fs.mkdirSync(safeCwd, { recursive: true });
       process.chdir(safeCwd);
       log.info('[auto-update] Moved process cwd before Windows installer handoff', { cwd: safeCwd });

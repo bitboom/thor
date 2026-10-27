@@ -87,7 +87,8 @@
     "serverInstall": {
       "hint": "AionUi روی سرور اجرا می‌شود. مؤلفه پیش‌نمایش را روی همان سرور نصب کنید، سپس دوباره تلاش کنید:",
       "icuNote": "اگر همچنان شروع نشد، کتابخانه ICU را روی سرور نصب کنید (Debian/Ubuntu: apt-get install -y libicu-dev)."
-    }
+    },
+    "readOnlyNotice": "Office preview is read-only. Edit a copy, then refresh the preview."
   },
   "word": {
     "title": "سند Word",

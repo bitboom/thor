@@ -1,209 +1,240 @@
-use std::ffi::{OsStr, OsString};
-#[cfg(test)]
-use std::path::Path;
-use std::path::PathBuf;
+//! Thor executes only its checksum-pinned OfficeCLI bundle. No runtime install,
+//! PATH lookup, moving release channel, or remote shell script is permitted.
+use std::fs::File;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
-use aionui_runtime::resolve_command_path;
+use aionui_runtime::Builder;
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
-// The mirror serves the same install scripts and release assets as GitHub
-// (install.sh itself already downloads assets mirror-first). Fetching the
-// script must follow the same order: raw.githubusercontent.com is unreachable
-// from many server deployments (aionui#3212 follow-up).
-pub(crate) const OFFICECLI_INSTALL_SH_MIRROR_URL: &str = "https://d.officecli.ai/install.sh";
-pub(crate) const OFFICECLI_INSTALL_PS1_MIRROR_URL: &str = "https://d.officecli.ai/install.ps1";
-pub(crate) const OFFICECLI_INSTALL_SH_URL: &str =
-    "https://raw.githubusercontent.com/iOfficeAI/OfficeCli/main/install.sh";
-pub(crate) const OFFICECLI_INSTALL_PS1_URL: &str =
-    "https://raw.githubusercontent.com/iOfficeAI/OfficeCli/main/install.ps1";
-pub(crate) const OFFICECLI_LATEST_RELEASE_URL: &str = "https://github.com/iOfficeAI/OfficeCli/releases/latest";
+use crate::error::OfficeError;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OfficecliInstallPlatform {
-    Unix,
-    Windows,
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OfficecliLock {
+    schema_version: u32,
+    version: String,
+    assets: Vec<OfficecliAsset>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct OfficecliInstallCommand {
-    pub program: OsString,
-    pub args: Vec<OsString>,
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OfficecliAsset {
+    runtime_key: String,
+    name: String,
+    size: u64,
+    sha256: String,
+    #[serde(default)]
+    read_only_watch: bool,
 }
 
-pub(crate) fn resolve_officecli_path() -> Option<PathBuf> {
-    resolve_command_path("officecli").or_else(resolve_known_officecli_install_path)
+#[derive(Debug, Clone)]
+pub(crate) struct VerifiedOfficecli {
+    path: PathBuf,
 }
 
-pub(crate) fn install_command() -> OfficecliInstallCommand {
-    if cfg!(windows) {
-        install_command_for_platform(OfficecliInstallPlatform::Windows)
-    } else {
-        install_command_for_platform(OfficecliInstallPlatform::Unix)
+impl VerifiedOfficecli {
+    pub(crate) fn command(&self) -> Builder {
+        let mut command = Builder::clean_cli(&self.path);
+        command.env("OFFICECLI_SKIP_UPDATE", "1");
+        command
+    }
+
+    pub(crate) fn watch_command(&self) -> Builder {
+        let mut command = Builder::new(&self.path);
+        command.env("OFFICECLI_SKIP_UPDATE", "1");
+        command.env("OFFICECLI_WATCH_READ_ONLY", "1");
+        command.env_remove("OFFICECLI_WATCH_ALLOWED_HOSTS");
+        command
     }
 }
 
-pub(crate) fn install_command_for_platform(platform: OfficecliInstallPlatform) -> OfficecliInstallCommand {
-    match platform {
-        OfficecliInstallPlatform::Windows => OfficecliInstallCommand {
-            program: OsString::from("powershell.exe"),
-            args: vec![
-                OsString::from("-NoProfile"),
-                OsString::from("-ExecutionPolicy"),
-                OsString::from("Bypass"),
-                OsString::from("-Command"),
-                OsString::from(format!(
-                    "$ErrorActionPreference='Stop'; try {{ $s = irm {OFFICECLI_INSTALL_PS1_MIRROR_URL} }} catch {{ $s = irm {OFFICECLI_INSTALL_PS1_URL} }}; iex $s"
-                )),
-            ],
-        },
-        OfficecliInstallPlatform::Unix => OfficecliInstallCommand {
-            program: OsString::from("bash"),
-            args: vec![
-                OsString::from("-lc"),
-                // Download to a temp file rather than piping: a connection
-                // dropped mid-stream would otherwise let the fallback output
-                // concatenate after a partial script.
-                OsString::from(format!(
-                    "f=$(mktemp) || exit 1; (curl -fsSL {OFFICECLI_INSTALL_SH_MIRROR_URL} -o \"$f\" || curl -fsSL {OFFICECLI_INSTALL_SH_URL} -o \"$f\") && bash \"$f\"; s=$?; rm -f \"$f\"; exit $s"
-                )),
-            ],
-        },
-    }
-}
-
-fn resolve_known_officecli_install_path() -> Option<PathBuf> {
-    resolve_known_officecli_install_path_from_env(
-        std::env::var_os("HOME").as_deref(),
-        std::env::var_os("LOCALAPPDATA").as_deref(),
-    )
-}
-
-fn resolve_known_officecli_install_path_from_env(
-    home: Option<&OsStr>,
-    local_app_data: Option<&OsStr>,
-) -> Option<PathBuf> {
-    let mut candidates = Vec::new();
-
-    if let Some(local_app_data) = local_app_data {
-        candidates.push(PathBuf::from(local_app_data).join("OfficeCli").join("officecli.exe"));
-    }
-
-    if let Some(home) = home {
-        candidates.push(PathBuf::from(home).join(".local").join("bin").join("officecli"));
-    }
-
-    candidates.into_iter().find(|path| path.is_file())
-}
-
-#[cfg(test)]
-pub(crate) fn resolve_officecli_path_from_env_for_test(
-    path_env: Option<&OsStr>,
-    home: Option<&Path>,
-    local_app_data: Option<&Path>,
-) -> Option<PathBuf> {
-    find_officecli_in_path(path_env).or_else(|| {
-        resolve_known_officecli_install_path_from_env(home.map(Path::as_os_str), local_app_data.map(Path::as_os_str))
+fn lock() -> &'static OfficecliLock {
+    static LOCK: OnceLock<OfficecliLock> = OnceLock::new();
+    LOCK.get_or_init(|| {
+        serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/officecli.lock.json")))
+            .expect("the embedded OfficeCLI lock must be valid")
     })
 }
 
-#[cfg(test)]
-fn find_officecli_in_path(path_env: Option<&OsStr>) -> Option<PathBuf> {
-    let path_env = path_env?;
-    for dir in std::env::split_paths(path_env) {
-        let candidate = dir.join("officecli");
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-
-        #[cfg(windows)]
-        {
-            let candidate = dir.join("officecli.exe");
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
+fn current_runtime_key() -> String {
+    let os = match std::env::consts::OS {
+        "windows" => "win32",
+        "macos" => "darwin",
+        #[cfg(target_env = "musl")]
+        "linux" => "linux-alpine",
+        other => other,
+    };
+    let arch = match std::env::consts::ARCH {
+        "x86_64" => "x64",
+        "aarch64" => "arm64",
+        other => other,
+    };
+    format!("{os}-{arch}")
 }
 
-#[cfg(test)]
-pub(crate) fn install_command_for_test(platform: OfficecliInstallPlatform) -> OfficecliInstallCommand {
-    install_command_for_platform(platform)
+fn current_asset() -> Result<&'static OfficecliAsset, OfficeError> {
+    let lock = lock();
+    if lock.schema_version != 1 {
+        return Err(OfficeError::StartFailed(
+            "OfficeCLI bundle lock schema is invalid".into(),
+        ));
+    }
+    lock.assets
+        .iter()
+        .find(|asset| asset.runtime_key == current_runtime_key())
+        .ok_or_else(|| OfficeError::StartFailed("Pinned OfficeCLI is unavailable for this platform".into()))
+}
+
+pub(crate) fn resolve_officecli_path() -> Result<VerifiedOfficecli, OfficeError> {
+    if !current_asset()?.read_only_watch {
+        return Err(OfficeError::RuntimePolicy {
+            code: "OFFICECLI_READONLY_REQUIRED",
+            message:
+                "Thor requires its pinned read-only OfficeCLI build for preview; reinstall a verified Thor release"
+                    .into(),
+        });
+    }
+    resolve_officecli_with_override(None)
+}
+
+pub(crate) fn resolve_officecli_with_override(configured: Option<&Path>) -> Result<VerifiedOfficecli, OfficeError> {
+    let asset = current_asset()?;
+    let path = match configured {
+        Some(path) => path.to_path_buf(),
+        None => aionui_runtime::managed_resources::bundled_root_candidate()
+            .ok_or_else(bundle_missing)?
+            .join("officecli")
+            .join(&lock().version)
+            .join(&asset.name),
+    };
+    verify_asset(&path, asset)?;
+    Ok(VerifiedOfficecli { path })
+}
+
+fn bundle_missing() -> OfficeError {
+    OfficeError::RuntimePolicy {
+        code: "OFFICECLI_BUNDLE_MISSING",
+        message: format!(
+            "Thor requires the bundled OfficeCLI {}. Reinstall a verified Thor release; runtime downloads are disabled.",
+            lock().version
+        ),
+    }
+}
+
+fn verify_asset(path: &Path, asset: &OfficecliAsset) -> Result<(), OfficeError> {
+    let mut file = File::open(path).map_err(|_| bundle_missing())?;
+    if !file
+        .metadata()
+        .is_ok_and(|metadata| metadata.is_file() && metadata.len() == asset.size)
+    {
+        return Err(OfficeError::RuntimePolicy {
+            code: "OFFICECLI_INTEGRITY_FAILED",
+            message: "Pinned OfficeCLI bundle size mismatch; reinstall Thor".into(),
+        });
+    }
+    let mut hash = Sha256::new();
+    let mut chunk = [0u8; 65536];
+    loop {
+        let count = file.read(&mut chunk).map_err(|_| bundle_missing())?;
+        if count == 0 {
+            break;
+        }
+        hash.update(&chunk[..count]);
+    }
+    if format!("{:x}", hash.finalize()) != asset.sha256 {
+        tracing::error!(version = %lock().version, "OfficeCLI bundle integrity validation failed");
+        return Err(OfficeError::RuntimePolicy {
+            code: "OFFICECLI_INTEGRITY_FAILED",
+            message: "Pinned OfficeCLI checksum mismatch; reinstall Thor".into(),
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn write_marker_file(path: &std::path::Path) {
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, b"#!/bin/sh\nexit 0\n").unwrap();
+    fn test_asset(bytes: &[u8]) -> OfficecliAsset {
+        OfficecliAsset {
+            runtime_key: "test".into(),
+            name: "officecli".into(),
+            size: bytes.len() as u64,
+            sha256: format!("{:x}", Sha256::digest(bytes)),
+            read_only_watch: false,
+        }
     }
 
     #[test]
-    fn officecli_resolution_uses_path_binary_not_legacy_prefix() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path_bin = tmp.path().join("path-bin").join("officecli");
-        let legacy_bin = ["runtime", "node", "tools", "officecli", "bin", "officecli"]
-            .into_iter()
-            .fold(tmp.path().to_path_buf(), |path, segment| path.join(segment));
-        write_marker_file(&path_bin);
-        write_marker_file(&legacy_bin);
-
-        let path_env = std::env::join_paths([path_bin.parent().unwrap()]).unwrap();
-        let resolved = resolve_officecli_path_from_env_for_test(Some(&path_env), Some(tmp.path()), None);
-
-        assert_eq!(resolved, Some(path_bin));
+    fn embedded_pin_has_fixed_release_assets_for_supported_targets() {
+        assert_eq!(lock().schema_version, 1);
+        assert_eq!(lock().version, "v1.0.159");
+        assert_eq!(lock().assets.len(), 8);
+        for asset in &lock().assets {
+            assert_eq!(asset.sha256.len(), 64);
+            assert!(asset.sha256.bytes().all(|byte| byte.is_ascii_hexdigit()));
+            assert!(asset.size > 1_000_000);
+            assert!(!asset.name.contains('/') && !asset.name.contains('\\'));
+        }
+        assert!(current_asset().is_ok());
     }
 
     #[test]
-    fn officecli_resolution_discovers_windows_installer_location() {
-        let tmp = tempfile::tempdir().unwrap();
-        let local_app_data = tmp.path().join("LocalAppData");
-        let officecli_exe = local_app_data.join("OfficeCli").join("officecli.exe");
-        std::fs::create_dir_all(officecli_exe.parent().unwrap()).unwrap();
-        std::fs::write(&officecli_exe, b"fake exe").unwrap();
-
-        let resolved = resolve_officecli_path_from_env_for_test(None, None, Some(&local_app_data));
-
-        assert_eq!(resolved, Some(officecli_exe));
-    }
-
-    #[test]
-    fn official_installer_commands_use_official_officecli_channel() {
-        let unix = install_command_for_test(OfficecliInstallPlatform::Unix);
-        let windows = install_command_for_test(OfficecliInstallPlatform::Windows);
-        let unix_text = format!("{:?} {:?}", unix.program, unix.args);
-        let windows_text = format!("{:?} {:?}", windows.program, windows.args);
-
-        assert!(unix_text.contains("iOfficeAI/OfficeCli/main/install.sh"));
-        assert!(windows_text.contains("iOfficeAI/OfficeCli/main/install.ps1"));
-    }
-
-    // Servers that cannot reach raw.githubusercontent.com (the common case on
-    // mainland-China clouds, see aionui#3212 follow-up) must still be able to
-    // fetch the installer: the official mirror comes first, GitHub is the
-    // fallback.
-    #[test]
-    fn installer_commands_try_mirror_before_github() {
-        let unix = install_command_for_test(OfficecliInstallPlatform::Unix);
-        let windows = install_command_for_test(OfficecliInstallPlatform::Windows);
-        let unix_text = format!("{:?} {:?}", unix.program, unix.args);
-        let windows_text = format!("{:?} {:?}", windows.program, windows.args);
-
-        let unix_mirror = unix_text.find("https://d.officecli.ai/install.sh");
-        let unix_github = unix_text.find("iOfficeAI/OfficeCli/main/install.sh");
-        assert!(unix_mirror.is_some(), "unix installer must include the mirror URL");
-        assert!(unix_mirror < unix_github, "unix installer must try the mirror first");
-
-        let windows_mirror = windows_text.find("https://d.officecli.ai/install.ps1");
-        let windows_github = windows_text.find("iOfficeAI/OfficeCli/main/install.ps1");
+    fn valid_bundle_is_verified_on_each_resolution_and_tampering_fails() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("officecli");
+        let bytes = b"synthetic executable fixture";
+        let asset = test_asset(bytes);
+        std::fs::write(&path, bytes).unwrap();
+        verify_asset(&path, &asset).unwrap();
+        std::fs::write(&path, vec![b'x'; bytes.len()]).unwrap();
         assert!(
-            windows_mirror.is_some(),
-            "windows installer must include the mirror URL"
+            verify_asset(&path, &asset)
+                .unwrap_err()
+                .to_string()
+                .contains("checksum mismatch")
         );
+    }
+
+    #[test]
+    fn missing_partial_and_configured_unverified_binaries_fail_closed() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("officecli");
+        let asset = test_asset(b"complete");
         assert!(
-            windows_mirror < windows_github,
-            "windows installer must try the mirror first"
+            verify_asset(&path, &asset)
+                .unwrap_err()
+                .to_string()
+                .contains("runtime downloads are disabled")
         );
+        std::fs::write(&path, b"partial").unwrap();
+        assert!(
+            verify_asset(&path, &asset)
+                .unwrap_err()
+                .to_string()
+                .contains("size mismatch")
+        );
+        assert!(resolve_officecli_with_override(Some(&path)).is_err());
+    }
+
+    #[tokio::test]
+    async fn preview_and_conversion_commands_disable_self_updates() {
+        let cli = VerifiedOfficecli {
+            path: PathBuf::from(if cfg!(windows) { "cmd.exe" } else { "sh" }),
+        };
+        for mut command in [cli.command(), cli.watch_command()] {
+            if cfg!(windows) {
+                command.args(["/D", "/C", "echo %OFFICECLI_SKIP_UPDATE%"]);
+            } else {
+                command.args(["-c", "printf %s \"$OFFICECLI_SKIP_UPDATE\""]);
+            }
+            command.stdout(std::process::Stdio::piped());
+            let output = command.output().await.unwrap();
+            assert!(output.status.success());
+            assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "1");
+        }
     }
 }

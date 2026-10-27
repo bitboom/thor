@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Left, Right, Refresh, Loading } from '@icon-park/react';
 import { ipcBridge } from '@/common';
+import { BROWSER_SESSION_PARTITION } from '@/common/config/constants';
 import { InternalNavTracker, shouldResetHistoryForUrlProp } from './webviewHistory';
 
 export interface WebviewHostProps {
@@ -315,7 +316,7 @@ const WebviewHost: React.FC<WebviewHostProps> = ({
        * is optional and must not block ordinary browsing.
        */
       try {
-        const webContentsId = webviewEl.getWebContentsId?.();
+        const webContentsId = partition === BROWSER_SESSION_PARTITION ? webviewEl.getWebContentsId?.() : undefined;
         if (typeof webContentsId === 'number') {
           void ipcBridge.application.reportBrowserWebContentsId.invoke({ webContentsId }).then((res) => {
             if (!res.success && res.msg) console.warn('[browser] agent control unavailable:', res.msg);
@@ -609,7 +610,6 @@ const WebviewHost: React.FC<WebviewHostProps> = ({
    * directly reachable by untrusted pages.
    */
   const webviewAttrs: Record<string, string> = {
-    allowpopups: 'false',
     webpreferences: 'contextIsolation=yes, nodeIntegration=no, nativeWindowOpen=no',
   };
   if (partition) {

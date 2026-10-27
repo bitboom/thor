@@ -87,7 +87,8 @@
     "serverInstall": {
       "hint": "AionUi läuft auf einem Server. Installiere die Vorschau-Komponente auf diesem Server und versuche es erneut:",
       "icuNote": "Falls es immer noch nicht startet, installiere die ICU-Bibliothek auf dem Server (Debian/Ubuntu: apt-get install -y libicu-dev)."
-    }
+    },
+    "readOnlyNotice": "Office preview is read-only. Edit a copy, then refresh the preview."
   },
   "word": {
     "title": "Word-Dokument",

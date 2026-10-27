@@ -5,7 +5,6 @@
  */
 
 import { ipcBridge } from '@/common';
-import { useTypingAnimation } from '@/renderer/hooks/chat/useTypingAnimation';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useScrollSyncTarget } from '../../hooks/useScrollSyncHelpers';
 import { generateInspectScript } from './htmlInspectScript';
@@ -156,107 +155,6 @@ export function resolveRelativePath(basePath: string, relativePath: string, work
 }
 
 /**
- * 内联化 HTML 中的相对资源（用于 browser iframe）
- * Inline relative resources in HTML (for browser iframe)
- *
- * - img src -> base64 data URL
- * - link href (CSS) -> inline <style> tag
- * - script src -> inline <script> tag
- *
- * @param html HTML 内容 / HTML content
- * @param basePath 基础文件路径 / Base file path
- * @returns 处理后的 HTML / Processed HTML
- */
-async function inlineRelativeResources(html: string, basePath: string, workspace?: string): Promise<string> {
-  let result = html;
-
-  // 1. 处理 <img src="relative"> -> base64 / Handle <img src="relative"> -> base64
-  const imgRegex = /<img([^>]*)\ssrc=["'](?!https?:\/\/|data:|\/\/)([^"']+)["']([^>]*)>/gi;
-  const imgMatches = [...result.matchAll(imgRegex)];
-
-  for (const match of imgMatches) {
-    const [fullMatch, before, src, after] = match;
-    try {
-      const absolutePath = resolveRelativePath(basePath, src, workspace);
-      const dataUrl = await ipcBridge.fs.getImageBase64.invoke({ path: absolutePath, workspace });
-      if (dataUrl) {
-        // getImageBase64 已经返回完整的 data URL / getImageBase64 already returns complete data URL
-        const newTag = `<img${before} src="${dataUrl}"${after}>`;
-        result = result.replace(fullMatch, newTag);
-      }
-    } catch (e) {
-      console.warn('[HTMLRenderer] Failed to inline image:', src, e);
-    }
-  }
-
-  // 2. 处理 <link href="relative" rel="stylesheet"> -> <style> / Handle CSS links -> inline <style>
-  const linkRegex = /<link([^>]*)\shref=["'](?!https?:\/\/|data:|\/\/)([^"']+)["']([^>]*)>/gi;
-  const linkMatches = [...result.matchAll(linkRegex)];
-
-  for (const match of linkMatches) {
-    const [fullMatch, _before, href, _after] = match;
-    // 检查是否为 stylesheet / Check if it's a stylesheet
-    const isStylesheet = /rel=["']stylesheet["']/i.test(fullMatch) || href.endsWith('.css');
-    if (isStylesheet) {
-      try {
-        const absolutePath = resolveRelativePath(basePath, href, workspace);
-        const cssContent = await ipcBridge.fs.readFile.invoke({ path: absolutePath, workspace });
-        if (cssContent) {
-          // 替换 CSS 中的相对 url() 引用为 base64 / Replace relative url() references in CSS with base64
-          let processedCss = cssContent;
-          const cssUrlRegex = /url\(["']?(?!https?:\/\/|data:|\/\/)([^"')]+)["']?\)/gi;
-          const cssUrlMatches = [...processedCss.matchAll(cssUrlRegex)];
-
-          for (const urlMatch of cssUrlMatches) {
-            const [urlFullMatch, urlPath] = urlMatch;
-            try {
-              // CSS 文件的基础路径 / Base path for CSS file
-              const cssBasePath = absolutePath;
-              const resourcePath = resolveRelativePath(cssBasePath, urlPath, workspace);
-              const dataUrl = await ipcBridge.fs.getImageBase64.invoke({ path: resourcePath, workspace });
-              if (dataUrl) {
-                // getImageBase64 已经返回完整的 data URL / getImageBase64 already returns complete data URL
-                processedCss = processedCss.replace(urlFullMatch, `url("${dataUrl}")`);
-              }
-            } catch (e) {
-              console.warn('[HTMLRenderer] Failed to inline CSS resource:', urlPath, e);
-            }
-          }
-
-          const styleTag = `<style>${processedCss}</style>`;
-          result = result.replace(fullMatch, styleTag);
-        }
-      } catch (e) {
-        console.warn('[HTMLRenderer] Failed to inline CSS:', href, e);
-      }
-    }
-  }
-
-  // 3. 处理 <script src="relative"> -> inline <script> / Handle script tags -> inline
-  const scriptRegex = /<script([^>]*)\ssrc=["'](?!https?:\/\/|data:|\/\/)([^"']+)["']([^>]*)><\/script>/gi;
-  const scriptMatches = [...result.matchAll(scriptRegex)];
-
-  for (const match of scriptMatches) {
-    const [fullMatch, before, src, after] = match;
-    try {
-      const absolutePath = resolveRelativePath(basePath, src, workspace);
-      const scriptContent = await ipcBridge.fs.readFile.invoke({ path: absolutePath, workspace });
-      if (scriptContent) {
-        // 保留其他属性（如 type, defer, async 等，但 async/defer 对 inline 无效）
-        // Keep other attributes (like type, but defer/async don't work for inline)
-        const attrsToKeep = (before + after).replace(/\s*(defer|async)\s*/gi, '');
-        const scriptTag = `<script${attrsToKeep}>${scriptContent}</script>`;
-        result = result.replace(fullMatch, scriptTag);
-      }
-    } catch (e) {
-      console.warn('[HTMLRenderer] Failed to inline script:', src, e);
-    }
-  }
-
-  return result;
-}
-
-/**
  * HTML 渲染器组件
  * HTML renderer component
  *
@@ -274,6 +172,7 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
   copySuccessMessage,
   onElementSelected,
 }) => {
+  const partition = useMemo(() => 'thor-html-' + crypto.randomUUID(), [content]);
   const divRef = useRef<HTMLDivElement>(null);
   const webviewRef = useRef<ElectronWebView | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -281,7 +180,6 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
   const lastLoggedSourceRef = useRef<string | null>(null);
   const isSyncingScrollRef = useRef(false); // 防止滚动同步循环 / Prevent scroll sync loops
   const [webviewContentHeight, setWebviewContentHeight] = useState(0); // webview 内容高度 / webview content height
-  const [inlinedHtmlContent, setInlinedHtmlContent] = useState<string>(''); // 内联化后的 HTML（用于 browser iframe）/ Inlined HTML (for browser iframe)
   const [currentTheme, setCurrentTheme] = useState<'light' | 'dark'>(() => {
     return (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') || 'light';
   });
@@ -305,124 +203,26 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  // 判断是否应该直接从文件加载（保留正常 file:// origin 和 Web Storage）- 仅 Electron 环境
-  // Determine if should load directly from file (keeps normal file:// origin and Web Storage) - Electron only
-  const shouldLoadFromFile = useMemo(() => {
-    return isElectron && Boolean(file_path) && !isDirty;
-  }, [file_path, isDirty, isElectron]);
-
-  // 检查是否有相对资源（用于 browser inline 处理）
-  // Check if has relative resources (for browser inline processing)
-  const hasRelativeResources = useMemo(() => {
-    return (
-      /<link[^>]+href=["'](?!https?:\/\/|data:|\/\/)[^"']+["']/i.test(content) ||
-      /<script[^>]+src=["'](?!https?:\/\/|data:|\/\/)[^"']+["']/i.test(content) ||
-      /<img[^>]+src=["'](?!https?:\/\/|data:|\/\/)[^"']+["']/i.test(content)
-    );
-  }, [content]);
-
-  // 流式打字动画：HTML 预览在使用 data URL 渲染时也能获得流式体验
-  // Typing animation: provide streaming experience when rendering via data URL
-  const { displayedContent } = useTypingAnimation({
-    content,
-    enabled: !shouldLoadFromFile && !hasRelativeResources,
-    speed: 40,
-  });
-
-  const htmlContent = useMemo(
-    () => (shouldLoadFromFile ? content : displayedContent),
-    [shouldLoadFromFile, content, displayedContent]
-  );
-
-  // 在 browser 环境下，当有相对资源时进行内联化处理
-  // In browser environment, inline relative resources when present
-  useEffect(() => {
-    if (isElectron) {
-      // Electron 环境不需要内联化，使用 webview 加载
-      // Electron environment doesn't need inlining, uses webview loading
-      return;
-    }
-
-    if (!hasRelativeResources || !file_path) {
-      // 没有相对资源或没有文件路径，使用原始内容
-      // No relative resources or no file path, use original content
-      setInlinedHtmlContent(content);
-      return;
-    }
-
-    // Browser 环境且有相对资源，进行内联化处理
-    // Browser environment with relative resources, perform inlining
-    let cancelled = false;
-    inlineRelativeResources(content, file_path, workspace)
-      .then((inlined) => {
-        if (!cancelled) {
-          setInlinedHtmlContent(inlined);
-        }
-      })
-      .catch((e) => {
-        console.warn('[HTMLRenderer] Failed to inline resources:', e);
-        if (!cancelled) {
-          setInlinedHtmlContent(content); // 回退到原始内容 / Fallback to original content
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [content, file_path, isElectron, hasRelativeResources, workspace]);
-
-  // 用于 browser iframe 的最终 HTML 内容
-  // Final HTML content for browser iframe
-  const browserHtmlContent = useMemo(() => {
-    if (hasRelativeResources && file_path) {
-      return inlinedHtmlContent || content; // 在内联化完成前显示原始内容 / Show original content before inlining completes
-    }
-    return displayedContent;
-  }, [hasRelativeResources, file_path, inlinedHtmlContent, content, displayedContent]);
+  // Deny external resources even in the browser iframe. The desktop guest also
+  // enforces this in its Electron session, including top-level navigation.
+  const policy =
+    "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'\">";
+  const doctype = content.match(/^\s*<!doctype[^>]*>/i)?.[0];
+  const isolatedHtml = doctype ? doctype + policy + content.slice(doctype.length) : policy + content;
+  const browserHtmlContent = isolatedHtml;
 
   // 计算 webview 的 src
   // Calculate webview src
-  const webviewSrc = useMemo(() => {
-    // 如果有文件路径且内容未被编辑，直接用 file:// URL 加载，避免 data: URL 的 opaque origin 限制
-    // If file path exists and content is clean, load via file:// to avoid data: URL opaque origin limits
-    if (shouldLoadFromFile && file_path) {
-      return `file://${file_path}`;
-    }
+  // Keep untrusted HTML in an opaque origin; relative local assets and network
+  // requests are deliberately unavailable in the desktop preview.
+  const webviewSrc = useMemo(() => 'data:text/html;charset=utf-8,' + encodeURIComponent(isolatedHtml), [isolatedHtml]);
 
-    // 否则使用 data URL（适用于动态生成的 HTML 或没有外部资源的情况）
-    // Otherwise use data URL (for dynamically generated HTML or no external resources)
-    let html = htmlContent;
-
-    // 注入 base 标签支持相对路径 / Inject base tag for relative paths
-    if (file_path) {
-      const fileDir = file_path.substring(0, file_path.lastIndexOf('/') + 1);
-      const base_url = `file://${fileDir}`;
-
-      // 检查是否已有 base 标签 / Check if base tag exists
-      if (!html.match(/<base\s+href=/i)) {
-        if (html.match(/<head>/i)) {
-          html = html.replace(/<head>/i, `<head><base href="${base_url}">`);
-        } else if (html.match(/<html>/i)) {
-          html = html.replace(/<html>/i, `<html><head><base href="${base_url}"></head>`);
-        } else {
-          html = `<head><base href="${base_url}"></head>${html}`;
-        }
-      }
-    }
-
-    const encoded = encodeURIComponent(html);
-    return `data:text/html;charset=utf-8,${encoded}`;
-  }, [htmlContent, file_path, shouldLoadFromFile]);
-
-  const webviewSourceKind: HtmlPreviewSourceKind = shouldLoadFromFile ? 'file' : 'data';
+  const webviewSourceKind: HtmlPreviewSourceKind = 'data';
   const webviewSourceReason = useMemo(() => {
-    if (shouldLoadFromFile) {
-      return 'clean-local-file';
-    }
     if (!file_path) return 'inline-content';
     if (isDirty) return 'dirty-content';
     return 'memory-preview';
-  }, [file_path, isDirty, shouldLoadFromFile]);
+  }, [file_path, isDirty]);
 
   useEffect(() => {
     if (!isElectron) return;
@@ -547,7 +347,7 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
 
       if (typeof message === 'string') {
         // 处理检查元素消息 / Handle inspect element message
-        if (message.startsWith('__INSPECT_ELEMENT__') && onElementSelected) {
+        if (message.startsWith('__INSPECT_ELEMENT__') && inspectMode && onElementSelected) {
           try {
             const jsonStr = message.slice('__INSPECT_ELEMENT__'.length);
             const data = JSON.parse(jsonStr) as InspectedElement;
@@ -577,18 +377,6 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
           } catch (e) {
             console.warn('[HTMLRenderer] Failed to parse content height message:', e);
           }
-        } else if ((consoleEvent.level ?? 0) >= 2) {
-          const isError = (consoleEvent.level ?? 0) >= 3;
-          logHtmlPreview(
-            isError ? 'error' : 'warn',
-            isError ? 'html_preview_console_error' : 'html_preview_console_warning',
-            {
-              level: consoleEvent.level,
-              line: consoleEvent.line,
-              message,
-              source: summarizePreviewUrl(consoleEvent.sourceId),
-            }
-          );
         }
       }
     };
@@ -598,7 +386,7 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
     return () => {
       webview.removeEventListener('console-message', handleConsoleMessage);
     };
-  }, [onElementSelected, onScroll]);
+  }, [inspectMode, onElementSelected, onScroll]);
 
   // 注入滚动监听脚本 / Inject scroll listener script
   const scrollSyncScript = useMemo(
@@ -742,7 +530,8 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
               bottom: 0,
               height: '100%',
             }}
-            webpreferences='allowRunningInsecureContent, javascript=yes'
+            partition={partition}
+            webpreferences='contextIsolation=yes, nodeIntegration=no, sandbox=yes, webSecurity=yes'
           />
         </>
       ) : (
@@ -755,7 +544,7 @@ const HTMLRenderer: React.FC<HTMLRendererProps> = ({
             width: '100%',
             height: '100%',
           }}
-          sandbox='allow-scripts allow-same-origin allow-forms allow-popups allow-modals'
+          sandbox=''
         />
       )}
     </div>

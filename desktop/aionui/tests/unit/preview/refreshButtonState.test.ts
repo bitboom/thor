@@ -222,3 +222,37 @@ describe('viewer-owned reloads', () => {
     expect(older).not.toHaveBeenCalled();
   });
 });
+import { thorPreviewPolicy, thorPreviewRequestAllowed, BROWSER_SESSION_PARTITION } from '@/common/config/constants';
+
+describe('untrusted preview session policy', () => {
+  const id = '12345678-1234-4234-8234-123456789abc';
+  it('allows only opaque inline HTML and rejects file or network attachment sources', () => {
+    const partition = 'thor-html-' + id;
+    expect(thorPreviewPolicy(partition, 'file:///C:/secret.html')).toBeNull();
+    expect(thorPreviewPolicy(partition, 'http://127.0.0.1:18765/')).toBeNull();
+    const policy = thorPreviewPolicy(partition, 'data:text/html,%3Ch1%3Eok%3C/h1%3E')!;
+    expect(thorPreviewRequestAllowed(policy, 'file:///C:/secret.txt')).toBe(false);
+    expect(thorPreviewRequestAllowed(policy, 'http://127.0.0.1:18765/')).toBe(false);
+    expect(thorPreviewRequestAllowed(policy, 'https://example.invalid/')).toBe(false);
+    expect(thorPreviewRequestAllowed(policy, 'data:image/png;base64,AA==')).toBe(true);
+  });
+  it('limits Office requests to the exact loopback watch port', () => {
+    const policy = thorPreviewPolicy('thor-office-' + id, 'http://127.0.0.1:19001/')!;
+    expect(thorPreviewRequestAllowed(policy, 'http://127.0.0.1:19001/')).toBe(true);
+    expect(thorPreviewRequestAllowed(policy, 'http://127.0.0.1:19001/events')).toBe(true);
+    expect(thorPreviewRequestAllowed(policy, 'http://127.0.0.1:19001/events?file=secret')).toBe(false);
+    expect(thorPreviewRequestAllowed(policy, 'http://127.0.0.1:19001/api/status')).toBe(false);
+    expect(thorPreviewRequestAllowed(policy, 'ws://127.0.0.1:19001/ws')).toBe(false);
+    expect(thorPreviewRequestAllowed(policy, 'http://127.0.0.1:19002/')).toBe(false);
+    expect(thorPreviewRequestAllowed(policy, 'http://127.0.0.1:19001/api/switch', 'POST')).toBe(false);
+    expect(thorPreviewRequestAllowed(policy, 'http://127.0.0.1:19001/api/send', 'POST')).toBe(false);
+    expect(thorPreviewRequestAllowed(policy, 'https://example.invalid/')).toBe(false);
+    expect(thorPreviewRequestAllowed(policy, 'file:///secret.txt')).toBe(false);
+    expect(thorPreviewPolicy('thor-office-' + id, 'http://localhost:19001/')).toBeNull();
+    expect(thorPreviewPolicy('thor-office-' + id, 'http://127.0.0.1:19001@evil.invalid/')).toBeNull();
+  });
+  it('keeps browser state in a separate persistent partition', () => {
+    expect(BROWSER_SESSION_PARTITION).toBe('persist:thor-browser');
+    expect(thorPreviewPolicy(BROWSER_SESSION_PARTITION, 'https://example.invalid')).toBeNull();
+  });
+});

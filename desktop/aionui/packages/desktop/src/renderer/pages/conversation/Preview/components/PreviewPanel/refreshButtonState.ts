@@ -34,7 +34,7 @@ export type RefreshButtonState =
 /** The slice of a preview tab this decision reads. */
 export type RefreshableTab = {
   content_type: PreviewContentType;
-  metadata?: { fileRef?: ChatFileRef; oversized?: boolean };
+  metadata?: { fileRef?: ChatFileRef; file_path?: string; oversized?: boolean };
 };
 
 /**
@@ -62,18 +62,18 @@ export const refreshButtonState = (tab: RefreshableTab, hasUpdate: boolean): Ref
     return { kind: 'hidden' };
   }
 
-  // No ref means no way to address the file for a re-read. Shown but inert, so the
+  // No ref or path means there is no way to address the file. Shown but inert, so the
   // toolbar does not shift when a tab that does have one is selected.
-  if (!tab.metadata?.fileRef) {
+  if (!tab.metadata?.fileRef && !tab.metadata?.file_path) {
     return { kind: 'disabled', reason: 'no-identity' };
   }
 
   if (hasUpdate) return { kind: 'updated' };
 
-  // Only files inside a project can be watched, so anything else will never turn
+  // Only project refs can be watched, so paths and other refs will never turn
   // amber by itself. Still clickable: a manual reload works regardless of whether
   // anyone told us to.
-  if (tab.metadata.fileRef.kind !== 'project') {
+  if (!tab.metadata?.fileRef || tab.metadata.fileRef.kind !== 'project') {
     return { kind: 'idle', reason: 'no-signal-source' };
   }
 

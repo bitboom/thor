@@ -1,12 +1,12 @@
-appId: com.aionui.app
-productName: AionUi
-executableName: AionUi
-copyright: Copyright © 2024 AionUi
+appId: com.bitboom.thor
+productName: Thor
+executableName: Thor
+copyright: Copyright © bitboom
 
 protocols:
-  - name: AionUi Protocol
+  - name: Thor Protocol
     schemes:
-      - aionui
+      - thor
 
 asar:
   smartUnpack: true
@@ -103,6 +103,10 @@ files:
     to: static
 
 extraResources:
+  - from: resources/thor-release
+    to: thor-release
+  - from: ../../integrations/synthetic-mail
+    to: thor/synthetic-mail
   - from: public
     to: .
   - from: resources/app.png
@@ -179,7 +183,7 @@ linux:
       Comment: ${description}
       Icon: AionUi
       Categories: Office;Utility;
-      MimeType: x-scheme-handler/aionui;
+      MimeType: x-scheme-handler/thor;
 
 npmRebuild: false
 buildDependenciesFromSource: false
@@ -218,7 +222,7 @@ electronDownload:
 
 publish:
   provider: github
-  owner: iOfficeAI
-  repo: AionUi
+  owner: bitboom
+  repo: thor
   publishAutoUpdate: true
   releaseType: release

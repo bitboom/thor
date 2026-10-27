@@ -444,6 +444,11 @@ function prepareAioncore(options) {
   const { projectRoot, platform, arch, version = 'latest' } = options;
   const runtimeKey = `${platform}-${arch}`;
   const actionsRunId = (process.env.AIONUI_BACKEND_RUN_ID || '').trim();
+  const thorRelease = process.env.AIONUI_THOR_RELEASE === '1';
+  const localBundleDir = (process.env.AIONUI_BACKEND_LOCAL_BUNDLE_DIR || '').trim();
+  if (thorRelease && (!localBundleDir || actionsRunId || version === 'latest')) {
+    throw new Error('Thor release packaging requires an explicit complete local Core bundle.');
+  }
 
   let tag = null;
   if (!actionsRunId) {
@@ -471,7 +476,6 @@ function prepareAioncore(options) {
   removeDirectorySafe(targetDir);
   ensureDirectory(targetDir);
 
-  const localBundleDir = (process.env.AIONUI_BACKEND_LOCAL_BUNDLE_DIR || '').trim();
   if (localBundleDir) {
     const resolvedLocalBundleDir = path.resolve(localBundleDir);
     const localBinaryPath = path.join(resolvedLocalBundleDir, binaryName);
@@ -490,13 +494,18 @@ function prepareAioncore(options) {
         version: tag || `actions-run-${actionsRunId}` || 'local-bundle',
         generatedAt: new Date().toISOString(),
         sourceType: 'local-bundle',
-        source: { path: resolvedLocalBundleDir },
+        source: thorRelease
+          ? { repository: 'bitboom/thor', commit: process.env.GITHUB_SHA || null, directory: 'host/aioncore' }
+          : { path: resolvedLocalBundleDir },
         files: [binaryName, 'managed-resources/'],
       };
       writeJson(path.join(targetDir, 'manifest.json'), manifest);
       verifyPreparedAioncoreBundle(projectRoot, platform, arch);
       console.log(`  Using local aioncore bundle: ${resolvedLocalBundleDir}`);
       return { prepared: true, dir: targetDir, sourceType: 'local-bundle' };
+    }
+    if (thorRelease) {
+      throw new Error('Thor release Core bundle is incomplete; refusing an upstream binary fallback.');
     }
     console.warn(`  Local aioncore bundle is incomplete or missing: ${resolvedLocalBundleDir}`);
   }

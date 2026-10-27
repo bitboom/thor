@@ -42,10 +42,15 @@ vi.mock('@/renderer/hooks/context/ThemeContext', () => ({
 // panel → context → IPC chain inside what is under test.
 //
 // `vi.hoisted` because the factory below is lifted above ordinary declarations.
-const { readContent } = vi.hoisted(() => ({ readContent: vi.fn(async () => 'disk contents') }));
+const { readContent, officeRefresh } = vi.hoisted(() => ({
+  readContent: vi.fn(async () => 'disk contents'),
+  officeRefresh: vi.fn(async () => ({ ok: true })),
+}));
+vi.mock('@/renderer/pages/conversation/Preview/components/viewers/OfficeDocViewer', () => ({ default: () => null }));
 
 vi.mock('@/common', () => ({
   ipcBridge: {
+    wordPreview: { refresh: { invoke: officeRefresh } },
     fileStream: { contentUpdate: { on: () => () => {} } },
     preview: { open: { on: () => () => {} } },
     shell: { openFile: { invoke: async () => undefined } },
@@ -62,6 +67,7 @@ vi.mock('@/common', () => ({
 }));
 
 import PreviewPanel from '@/renderer/pages/conversation/Preview/components/PreviewPanel/PreviewPanel';
+import { registerTabReloader } from '@/renderer/pages/conversation/Preview/context/tabReloaderRegistry';
 import {
   PreviewProvider,
   usePreviewContext,
@@ -118,6 +124,8 @@ beforeEach(() => {
 beforeEach(() => {
   localStorage.clear();
   readContent.mockClear();
+  officeRefresh.mockReset();
+  officeRefresh.mockResolvedValue({ ok: true });
 });
 
 afterEach(() => {
@@ -223,6 +231,87 @@ describe('refreshing a tab with unsaved changes', () => {
         expect(ctx.activeTab?.content).toBe('disk contents');
         expect(ctx.activeTab?.isDirty).toBe(false);
       });
+    },
+    TIMEOUT_MS
+  );
+});
+
+describe('Office refresh', () => {
+  it(
+    'restarts the watcher before reloading its viewer, and does not reload on failure',
+    async () => {
+      const { rerender } = render(<Harness showPanel={false} />);
+      act(() => ctx.openPreview('', 'word', { title: 'sample.docx', file_path: '/workspace/sample.docx' }));
+      const reload = vi.fn();
+      const unregister = registerTabReloader(ctx.activeTab!.id, reload);
+      act(() => rerender(<Harness showPanel />));
+      let finish!: (value: { ok: boolean }) => void;
+      officeRefresh.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          })
+      );
+      fireEvent.click(await screen.findByTestId('preview-refresh'));
+      expect(reload).not.toHaveBeenCalled();
+      await act(async () => finish({ ok: true }));
+      expect(reload).toHaveBeenCalledTimes(1);
+      officeRefresh.mockResolvedValueOnce({ ok: false });
+      fireEvent.click(screen.getByTestId('preview-refresh'));
+      await screen.findByText('preview.refresh.failed');
+      expect(reload).toHaveBeenCalledTimes(1);
+      unregister();
+    },
+    TIMEOUT_MS
+  );
+  it(
+    'refreshes an Office document addressed only by file path',
+    async () => {
+      const { rerender } = render(<Harness showPanel={false} />);
+      act(() =>
+        ctx.openPreview('', 'word', {
+          title: 'sample.docx',
+          file_name: 'sample.docx',
+          file_path: '/workspace/sample.docx',
+        })
+      );
+      act(() => rerender(<Harness showPanel />));
+      fireEvent.click(await screen.findByTestId('preview-refresh'));
+      await waitFor(() =>
+        expect(officeRefresh).toHaveBeenCalledWith(expect.objectContaining({ file_path: '/workspace/sample.docx' }))
+      );
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    'asks Core to re-render the addressed document',
+    async () => {
+      const { rerender } = render(<Harness showPanel={false} />);
+      const fileRef = { kind: 'project' as const, pe_id: 'peA', relative_path: 'sample.docx' };
+      act(() => ctx.openPreview('', 'word', { title: 'sample.docx', file_name: 'sample.docx', fileRef }));
+      act(() => rerender(<Harness showPanel />));
+      fireEvent.click(await screen.findByTestId('preview-refresh'));
+      await waitFor(() => expect(officeRefresh).toHaveBeenCalledWith(expect.objectContaining({ file: fileRef })));
+    },
+    TIMEOUT_MS
+  );
+  it(
+    'reports an HTTP-success response whose body says refresh failed',
+    async () => {
+      officeRefresh.mockResolvedValue({ ok: false });
+      const { rerender } = render(<Harness showPanel={false} />);
+      act(() =>
+        ctx.openPreview('', 'word', {
+          title: 'sample.docx',
+          file_name: 'sample.docx',
+          fileRef: { kind: 'project', pe_id: 'peA', relative_path: 'sample.docx' },
+        })
+      );
+      act(() => rerender(<Harness showPanel />));
+      fireEvent.click(await screen.findByTestId('preview-refresh'));
+      await waitFor(() => expect(officeRefresh).toHaveBeenCalled());
+      expect(await screen.findByText('preview.refresh.failed')).toBeInTheDocument();
     },
     TIMEOUT_MS
   );

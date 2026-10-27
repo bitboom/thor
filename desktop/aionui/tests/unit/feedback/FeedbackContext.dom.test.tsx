@@ -216,32 +216,15 @@ describe('FeedbackProvider / useFeedback', () => {
     });
   });
 
-  it('captures a screenshot via electronAPI when autoScreenshot=true', async () => {
-    const capture = vi.fn(() =>
-      Promise.resolve({
-        filename: 'shot.png',
-        data: [1, 2, 3, 4],
-      })
-    );
+  it('does not capture a screenshot even when requested by an upstream entry point', async () => {
+    const capture = vi.fn();
     setElectronAPI(capture);
-
     const user = userEvent.setup();
     renderWithProvider(<Trigger module='agent-detection' autoScreenshot={true} />);
-
     await user.click(document.querySelector('button')!);
-
-    await waitFor(() => {
-      const lastCall = modalSpy.mock.calls.at(-1)?.[0];
-      expect(lastCall.visible).toBe(true);
-      expect(lastCall.prefilledScreenshots).toHaveLength(1);
-    });
-
-    expect(capture).toHaveBeenCalledTimes(1);
-    const lastCall = modalSpy.mock.calls.at(-1)?.[0];
-    expect(lastCall.defaultModule).toBe('agent-detection');
-    expect(lastCall.prefilledScreenshots[0].filename).toBe('shot.png');
-    expect(lastCall.prefilledScreenshots[0].type).toBe('image/png');
-    expect(Array.from(lastCall.prefilledScreenshots[0].data)).toEqual([1, 2, 3, 4]);
+    await waitFor(() => expect(modalSpy.mock.calls.at(-1)?.[0].visible).toBe(true));
+    expect(capture).not.toHaveBeenCalled();
+    expect(modalSpy.mock.calls.at(-1)?.[0].prefilledScreenshots).toBeUndefined();
   });
 
   it('opens the modal without screenshots when the electronAPI shim is missing', async () => {
@@ -271,7 +254,7 @@ describe('FeedbackProvider / useFeedback', () => {
       const lastCall = modalSpy.mock.calls.at(-1)?.[0];
       expect(lastCall.visible).toBe(true);
     });
-    expect(capture).toHaveBeenCalledTimes(1);
+    expect(capture).not.toHaveBeenCalled();
     const lastCall = modalSpy.mock.calls.at(-1)?.[0];
     expect(lastCall.prefilledScreenshots).toBeUndefined();
   });

@@ -11,9 +11,9 @@ import { installGpuCrashHandler } from './process/utils/gpuRecovery';
 import { describeUncaughtError } from './process/utils/describeUncaughtError';
 import type { UncaughtErrorDiagnostics } from './process/utils/describeUncaughtError';
 import { createRendererRecoveryPolicy } from './process/utils/rendererRecovery';
-import { captureBackendStartupFailure, initSentry, scheduleStartupLogReport, setSentryDeviceId } from './sentry';
+import { captureBackendStartupFailure } from './sentry';
 
-initSentry();
+// Thor does not initialize upstream telemetry.
 
 import './process/utils/configureConsoleLog';
 import { app, BrowserWindow, ipcMain, nativeImage, powerMonitor, session } from 'electron';
@@ -22,6 +22,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { initMainAdapterWithWindow } from './common/adapter/main';
 import { ipcBridge } from './common';
+import {
+  BROWSER_SESSION_PARTITION,
+  thorPreviewPolicy,
+  thorPreviewRequestAllowed,
+  type ThorPreviewPolicy,
+} from './common/config/constants';
 import { initializeProcess } from './process';
 import { startBackendOrExit } from './process/startup/backendStartup';
 import { assertStartupArchitectureCompatible } from './process/startup/architectureCompatibility';
@@ -502,9 +508,44 @@ const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): v
       webviewTag: true, // 启用 webview 标签用于 HTML 预览 / Enable webview tag for HTML preview
     },
   });
+  // Preview guests use fresh in-memory sessions and no Node/preload bridge.
+  // Bind the request policy before the guest is created, not after it loads.
+  const previewSessions = new Map<Electron.Session, ThorPreviewPolicy>();
+  mainWindow.webContents.on('will-attach-webview', (event, preferences, params) => {
+    delete preferences.preload;
+    delete params.preload;
+    preferences.nodeIntegration = false;
+    preferences.nodeIntegrationInSubFrames = false;
+    preferences.contextIsolation = true;
+    preferences.sandbox = true;
+    preferences.webSecurity = true;
+    preferences.allowRunningInsecureContent = false;
+    const partition = params.partition ?? '';
+    if (!partition.startsWith('thor-html-') && !partition.startsWith('thor-office-')) return;
+    const policy = thorPreviewPolicy(partition, params.src ?? '');
+    if (!policy) {
+      event.preventDefault();
+      return;
+    }
+    const isolated = session.fromPartition(partition);
+    previewSessions.set(isolated, policy);
+    isolated.setPermissionRequestHandler((_guest, _permission, callback) => callback(false));
+    isolated.setPermissionCheckHandler(() => false);
+    isolated.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
+      callback({ cancel: !thorPreviewRequestAllowed(policy, details.url, details.method) });
+    });
+  });
+  mainWindow.webContents.on('did-attach-webview', (_event, guest) => {
+    const guestSession = guest.session;
+    const policy = previewSessions.get(guestSession);
+    if (!policy) return;
+    guest.setWindowOpenHandler(() => ({ action: 'deny' }));
+    guest.on('will-navigate', (event, url) => {
+      if (!thorPreviewRequestAllowed(policy, url)) event.preventDefault();
+    });
+    guest.once('destroyed', () => previewSessions.delete(guestSession));
+  });
   console.log(`[AionUi] Main window created (id=${mainWindow.id})`);
-
-  scheduleStartupLogReport(mainWindow);
 
   // Show window after content is ready to prevent FOUC (Flash of Unstyled Content)
   // Use 'ready-to-show' which fires when renderer has painted first frame,
@@ -715,18 +756,13 @@ const handleAppReady = async (): Promise<void> => {
     }
   }
 
-  setSentryDeviceId();
-
-  // Allow the renderer's Local Font Access queries (window.queryLocalFonts),
-  // used by the appearance font picker to enumerate installed fonts. Electron 37
-  // surfaces the 'local-fonts' permission as 'unknown' and denies it when no
-  // request handler is installed. Grant it here; other permissions are granted
-  // too so installing this handler preserves Electron's default-grant behaviour
-  // and regresses no capability the app already relies on. Runs once, before any
-  // window is created.
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
-    callback(true);
-  });
+  // Permissions are denied by default. Browser and preview sessions do not
+  // inherit the app's cookies or receive a blanket permission grant.
+  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  session.defaultSession.setPermissionCheckHandler(() => false);
+  const browserSession = session.fromPartition(BROWSER_SESSION_PARTITION);
+  browserSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  browserSession.setPermissionCheckHandler(() => false);
 
   try {
     await initializeProcess();

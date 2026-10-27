@@ -115,3 +115,34 @@ export type FeedbackDiagnosticsContextInput = {
   routeAtSubmit?: string;
   selectedModule?: string;
 };
+
+/** Thor public-feedback text preparation. No diagnostics are collected here. */
+export function sanitizeFeedbackText(value: string): string {
+  return value
+    .replace(
+      /-----BEGIN [^-\r\n]*PRIVATE KEY-----[\s\S]*?-----END [^-\r\n]*PRIVATE KEY-----/gi,
+      '[REDACTED PRIVATE KEY]'
+    )
+    .replace(
+      /\b(?:gh[pousr]_[A-Za-z0-9_]{10,}|github_pat_[A-Za-z0-9_]{10,}|sk-[A-Za-z0-9_-]{10,})\b/g,
+      '[REDACTED TOKEN]'
+    )
+    .replace(/^(\s*(?:cookie|set-cookie|authorization)\s*:)\s*[^\r\n]*/gim, '$1 [REDACTED]')
+    .replace(
+      /(["'](?:password|passwd|secret|token|api[_-]?key|authorization|cookie)["']\s*:\s*)["'][^"']*["']/gi,
+      '$1"[REDACTED]"'
+    )
+    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]')
+    .replace(/\b(password|passwd|secret|token|api[_-]?key|authorization|cookie)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]')
+    .replace(/https?:\/\/[^\s<>]+/gi, '[REDACTED URL]')
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[REDACTED EMAIL]')
+    .replace(/\b[A-Za-z]:[\\/][^\r\n\t"<>|]*/g, '[REDACTED PATH]')
+    .replace(/(?:^|\s)(?:\/(?:Users|home|tmp|var|mnt|opt)\/[^\s]+)/g, ' [REDACTED PATH]')
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, '[REDACTED IP]')
+    .trim();
+}
+
+export type ThorFeedbackPayload = { title: string; body: string };
+export function prepareThorFeedback(title: string, body: string): ThorFeedbackPayload {
+  return { title: sanitizeFeedbackText(title).slice(0, 200), body: sanitizeFeedbackText(body).slice(0, 10000) };
+}

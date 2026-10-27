@@ -229,6 +229,19 @@ describe('buildSpawnArgs', () => {
 });
 
 describe('buildSpawnEnv', () => {
+  it('isolates only Codex SQLite state and preserves the existing authentication home', () => {
+    const previous = process.env.CODEX_HOME;
+    process.env.CODEX_HOME = '/existing-auth-home';
+    try {
+      const env = buildSpawnEnv(undefined, '/thor-user-data/agent/codex/sqlite');
+      expect(env.CODEX_SQLITE_HOME).toBe('/thor-user-data/agent/codex/sqlite');
+      expect(env.CODEX_HOME).toBe('/existing-auth-home');
+      expect(process.env.CODEX_SQLITE_HOME).not.toBe('/thor-user-data/agent/codex/sqlite');
+    } finally {
+      if (previous === undefined) delete process.env.CODEX_HOME;
+      else process.env.CODEX_HOME = previous;
+    }
+  });
   it('merges process.env with AIONUI_* dir vars', () => {
     const env = buildSpawnEnv({
       cacheDir: '/c',

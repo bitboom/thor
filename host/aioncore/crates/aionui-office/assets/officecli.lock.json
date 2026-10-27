@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "version": "v1.0.159",
+  "releaseUrl": "https://github.com/iOfficeAI/OfficeCLI/releases/tag/v1.0.159",
+  "downloadBase": "https://github.com/iOfficeAI/OfficeCLI/releases/download/v1.0.159",
+  "licenseUrl": "https://raw.githubusercontent.com/iOfficeAI/OfficeCLI/v1.0.159/LICENSE",
+  "licenseSha256": "7e282402a5a6db33995fe638bb3fe79013f9884d8f7d15a42e481c1e86aadda1",
+  "assets": [
+    { "runtimeKey": "win32-x64", "name": "officecli-win-x64.exe", "size": 33533864, "sha256": "572c0a4da35333cf866fa5a2fb8259a4a2a8c9922be031d6b7a86936282ef94e" },
+    { "runtimeKey": "win32-arm64", "name": "officecli-win-arm64.exe", "size": 33976244, "sha256": "2769867fb1bd19e1b33acdf9e69d0d94e6dc9ffa2425819e602a4c40ed83a997" },
+    { "runtimeKey": "darwin-x64", "name": "officecli-mac-x64", "size": 34888992, "sha256": "cc939ccac6fa468e0cd3cdbfdab39efdbf49d88ba9f0efad138fdddf494b1e22" },
+    { "runtimeKey": "darwin-arm64", "name": "officecli-mac-arm64", "size": 33908560, "sha256": "b78ac7f9213e5fd0de0e3cb5d0f81bd427f9dd74b6c31e134fd1167427559167" },
+    { "runtimeKey": "linux-x64", "name": "officecli-linux-x64", "size": 35502949, "sha256": "92d9aeed324d91ed2a107f7f8dc7468829b14390a66cf2bbdfb25c40beac50ea" },
+    { "runtimeKey": "linux-arm64", "name": "officecli-linux-arm64", "size": 34889223, "sha256": "a27778548f2820771f54a70887af3c3ec214fe60e63b32836b09b3f3e2c4c493" },
+    { "runtimeKey": "linux-alpine-x64", "name": "officecli-linux-alpine-x64", "size": 35520399, "sha256": "265a9a0e57273a831dc668509c812cf83ae94af9ceb77a4a37e22113a1a90ac7" },
+    { "runtimeKey": "linux-alpine-arm64", "name": "officecli-linux-alpine-arm64", "size": 34929759, "sha256": "590e082f0db46deb010d75e2a8249cf312f292d80424fbd45fcc97d484bfab53" }
+  ]
+}

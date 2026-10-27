@@ -28,7 +28,7 @@
  * state must be shared across all tabs and projects and survive restarts, so a
  * user can log in once on the agent's behalf.
  */
-export const BROWSER_SESSION_PARTITION = 'persist:aionui-browser';
+export const BROWSER_SESSION_PARTITION = 'persist:thor-browser';
 
 /**
  * 内置浏览器 MCP 的注册名。
@@ -115,3 +115,40 @@ export const TEAM_MODE_ENABLED = true;
 // Stable ID for the Google Auth virtual provider.
 // Shared between frontend (useModelProviderList) and backend (SystemActions).
 export const GOOGLE_AUTH_PROVIDER_ID = 'google-auth-gemini';
+
+/** Request policy for ephemeral, untrusted preview guests. */
+export type ThorPreviewPolicy = { kind: 'html' } | { kind: 'office'; origin: string };
+export function thorPreviewPolicy(partition: string, source: string): ThorPreviewPolicy | null {
+  if (!/^thor-(html|office)-[0-9a-f-]{36}$/i.test(partition)) return null;
+  try {
+    const url = new URL(source);
+    if (partition.startsWith('thor-html-'))
+      return url.protocol === 'data:' && source.startsWith('data:text/html') ? { kind: 'html' } : null;
+    if (
+      url.protocol !== 'http:' ||
+      url.hostname !== '127.0.0.1' ||
+      !url.port ||
+      url.username ||
+      url.password ||
+      url.pathname !== '/' ||
+      url.search
+    )
+      return null;
+    return { kind: 'office', origin: url.origin };
+  } catch {
+    return null;
+  }
+}
+export function thorPreviewRequestAllowed(policy: ThorPreviewPolicy, raw: string, method = 'GET'): boolean {
+  try {
+    const url = new URL(raw);
+    if (url.protocol === 'data:' || url.protocol === 'blob:') return true;
+    if (policy.kind === 'html' || method.toUpperCase() !== 'GET') return false;
+    if (url.username || url.password || url.hostname !== '127.0.0.1' || url.protocol !== 'http:' || url.search)
+      return false;
+    const expected = new URL(policy.origin);
+    return url.port === expected.port && (url.pathname === '/' || url.pathname === '/events');
+  } catch {
+    return false;
+  }
+}

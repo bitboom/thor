@@ -1448,18 +1448,21 @@ const officeStopBody = (p: OfficeStopParams) => ({ file_path: p.file_path ?? '',
 export const pptPreview = {
   start: httpPost<{ url: string; error?: string }, OfficeStartParams>('/api/ppt-preview/start', officeStartBody),
   stop: httpPost<void, OfficeStopParams>('/api/ppt-preview/stop', officeStopBody),
+  refresh: httpPost<{ ok: boolean; error?: string }, OfficeStartParams>('/api/ppt-preview/refresh', officeStartBody),
   status: wsEmitter<{ state: 'starting' | 'installing' | 'ready' | 'error'; message?: string }>('ppt-preview.status'),
 };
 
 export const wordPreview = {
   start: httpPost<{ url: string; error?: string }, OfficeStartParams>('/api/word-preview/start', officeStartBody),
   stop: httpPost<void, OfficeStopParams>('/api/word-preview/stop', officeStopBody),
+  refresh: httpPost<{ ok: boolean; error?: string }, OfficeStartParams>('/api/word-preview/refresh', officeStartBody),
   status: wsEmitter<{ state: 'starting' | 'installing' | 'ready' | 'error'; message?: string }>('word-preview.status'),
 };
 
 export const excelPreview = {
   start: httpPost<{ url: string; error?: string }, OfficeStartParams>('/api/excel-preview/start', officeStartBody),
   stop: httpPost<void, OfficeStopParams>('/api/excel-preview/stop', officeStopBody),
+  refresh: httpPost<{ ok: boolean; error?: string }, OfficeStartParams>('/api/excel-preview/refresh', officeStartBody),
   status: wsEmitter<{ state: 'starting' | 'installing' | 'ready' | 'error'; message?: string }>('excel-preview.status'),
 };
 

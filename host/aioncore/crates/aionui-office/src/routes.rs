@@ -24,6 +24,12 @@ use crate::types::DocType;
 impl From<OfficeError> for ApiError {
     fn from(err: OfficeError) -> Self {
         match err {
+            OfficeError::RuntimePolicy { code, message } => ApiError::coded(
+                StatusCode::SERVICE_UNAVAILABLE,
+                code,
+                message,
+                None::<serde_json::Value>,
+            ),
             OfficeError::OfficecliNotFound => ApiError::BadRequest("officecli not found".into()),
             OfficeError::InstallFailed(_) => ApiError::Internal("officecli install failed".into()),
             OfficeError::StartFailed(msg) => ApiError::Internal(format!("preview start failed: {msg}")),
@@ -197,30 +203,8 @@ async fn start_preview(
     Ok(Json(ApiResponse::ok(resp)))
 }
 
-/// How long to wait on officecli's `/api/switch`. The switch re-renders the
-/// document in a child process before answering, so this is a render budget, not
-/// a network one; the proxy's own timeout is far shorter.
-const SWITCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
-
-/// `POST /api/{word|excel|ppt}-preview/refresh` — make the running watch server
-/// re-read this document from disk.
-///
-/// officecli does not watch the filesystem (its own help says `external edits are
-/// not detected`), and nothing on our side reloads office documents either, so an
-/// externally-edited office file is the one preview type that would otherwise never
-/// update. Refresh has to be pushed.
-///
-/// Re-issuing `POST /api/switch` for the document already loaded is what does it:
-/// officecli treats a same-file switch as a supported force-refresh, re-renders in
-/// a child process, then broadcasts `doc-switched`, on which the embedded page
-/// reloads itself. Simply reloading the webview would not work — `GET /` serves the
-/// server's cached HTML, so the reload could return the same stale document and the
-/// button would appear to do nothing.
-///
-/// Reaching officecli is the backend's job, not the client's: under web deployment
-/// the frontend and officecli are on different hosts, and the existing office proxy
-/// is GET-only (its `forward` takes no method or body), so it structurally cannot
-/// carry this POST.
+/// Refresh a document by restarting its read-only watcher on the same port.
+/// The desktop reloads the guest URL after this authenticated Core request.
 async fn refresh_preview(
     state: OfficeRouterState,
     user_id: &str,
@@ -256,14 +240,18 @@ async fn refresh_preview(
     };
 
     let response = state
-        .proxy_service
-        .force_reload(port, &target_path, SWITCH_TIMEOUT)
+        .watch_manager
+        .restart_for_user(user_id, &target_path, doc_type)
         .await;
     Ok(Json(ApiResponse::ok(match response {
-        Ok(()) => RefreshPreviewResponse { ok: true, error: None },
-        Err(code) => RefreshPreviewResponse {
+        Ok(restarted_port) if restarted_port == port => RefreshPreviewResponse { ok: true, error: None },
+        Ok(_) => RefreshPreviewResponse {
             ok: false,
-            error: Some(code.to_owned()),
+            error: Some("OFFICECLI_START_FAILED".to_owned()),
+        },
+        Err(error) => RefreshPreviewResponse {
+            ok: false,
+            error: Some(preview_error_code(&error).to_owned()),
         },
     })))
 }
@@ -387,6 +375,7 @@ fn file_error_to_api_error(error: FileError) -> ApiError {
 
 fn preview_error_code(error: &OfficeError) -> &'static str {
     match error {
+        OfficeError::RuntimePolicy { code, .. } => code,
         OfficeError::OfficecliNotFound => "OFFICECLI_NOT_FOUND",
         OfficeError::InstallFailed(_) => "OFFICECLI_INSTALL_FAILED",
         OfficeError::PortTimeout(_) => "OFFICECLI_PORT_TIMEOUT",

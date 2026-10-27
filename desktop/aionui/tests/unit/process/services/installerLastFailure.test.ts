@@ -17,7 +17,23 @@ afterEach(async () => {
 });
 
 describe('installerLastFailure service', () => {
-  it('consumes a valid installer-last-failure marker once from the AppData AionUi directory', async () => {
+  it('keeps the upstream profile marker untouched', async () => {
+    const { consumeInstallerLastFailure, getInstallerLastFailureMarkerPath } =
+      await import('@/process/services/installerLastFailure');
+    const appDataDir = makeAppDataDir();
+    const upstreamMarker = path.join(appDataDir, 'AionUi', 'installer-last-failure.json');
+    const fs = await import('node:fs/promises');
+    await fs.mkdir(path.dirname(upstreamMarker), { recursive: true });
+    writeFileSync(upstreamMarker, JSON.stringify({ schemaVersion: 1, kind: 'app-cannot-be-closed' }));
+
+    expect(getInstallerLastFailureMarkerPath(appDataDir)).toBe(
+      path.join(appDataDir, 'Thor', 'installer-last-failure.json')
+    );
+    await expect(consumeInstallerLastFailure({ appDataDir })).resolves.toBeNull();
+    expect(existsSync(upstreamMarker)).toBe(true);
+  });
+
+  it('consumes a valid installer-last-failure marker once from the AppData Thor directory', async () => {
     const { consumeInstallerLastFailure, getInstallerLastFailureMarkerPath } =
       await import('@/process/services/installerLastFailure');
     const appDataDir = makeAppDataDir();

@@ -195,33 +195,33 @@ const PreviewPanel: React.FC = () => {
       // A viewer that renders its own content knows how to refresh it. pdf registers
       // here because its stream URL never changes, so only the webview can fetch
       // fresh bytes.
+      // Office watcher must restart before its viewer reloads.
+      const tab = tabs.find((item) => item.id === tabId);
+      if (tab && (tab.content_type === 'word' || tab.content_type === 'excel' || tab.content_type === 'ppt')) {
+        const bridge = { word: ipcBridge.wordPreview, excel: ipcBridge.excelPreview, ppt: ipcBridge.pptPreview }[
+          tab.content_type
+        ];
+        try {
+          const result = await bridge.refresh.invoke({
+            file_path: tab.metadata?.file_path,
+            workspace: tab.metadata?.workspace,
+            file: tab.metadata?.fileRef,
+          });
+          if (result.ok) {
+            reloadViaViewer(tabId);
+            clearTabUpdate(tabId);
+            return;
+          }
+        } catch {
+          // The existing preview stays visible; leave the update marker intact.
+        }
+        messageApi.error(t('preview.refresh.failed'));
+        return;
+      }
       if (reloadViaViewer(tabId)) {
         clearTabUpdate(tabId);
         return;
       }
-
-      // office documents are rendered by a separate process that does not watch the
-      // filesystem, so refreshing one means asking that process to re-read the file.
-      // Not wired yet — the endpoint exists (POST /api/{word|excel|ppt}-preview/refresh)
-      // but connecting it is a follow-up, so say so rather than appear to succeed.
-      //
-      // When it is wired: the response is `ApiResponse<{ ok: boolean, error?: string }>`
-      // and `ok: false` comes back as HTTP 200. That is deliberate on the backend's part
-      // — a failed refresh still leaves the previous document being served, so the tab
-      // is not broken and an error status would overstate it. The consequence here is
-      // that the status code cannot tell success from failure: read `ok` from the body
-      // and report `error` through the office error path.
-      //
-      // Getting that wrong is worse than it looks. A 200 read as success shows the user
-      // nothing at all while the content stays stale, so they conclude the file really
-      // did not change — doubting their own memory rather than the software, which is
-      // the one failure mode no amount of retrying gets them out of.
-      const tabType = tabs.find((tab) => tab.id === tabId)?.content_type;
-      if (tabType === 'word' || tabType === 'excel' || tabType === 'ppt') {
-        messageApi.info(t('preview.refresh.officeNotWired'));
-        return;
-      }
-
       if (await reloadTabContent(tabId)) {
         clearTabUpdate(tabId);
         return;
@@ -1124,6 +1124,7 @@ const PreviewPanel: React.FC = () => {
     } else if (content_type === 'ppt') {
       return (
         <PptViewer
+          tabId={activeTabId ?? undefined}
           fileRef={metadata?.fileRef}
           file_path={metadata?.file_path}
           content={content}
@@ -1133,6 +1134,7 @@ const PreviewPanel: React.FC = () => {
     } else if (content_type === 'word') {
       return (
         <OfficeDocPreview
+          tabId={activeTabId ?? undefined}
           fileRef={metadata?.fileRef}
           file_path={metadata?.file_path}
           content={content}
@@ -1142,6 +1144,7 @@ const PreviewPanel: React.FC = () => {
     } else if (content_type === 'excel') {
       return (
         <ExcelPreview
+          tabId={activeTabId ?? undefined}
           fileRef={metadata?.fileRef}
           file_path={metadata?.file_path}
           content={content}

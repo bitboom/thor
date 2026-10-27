@@ -87,7 +87,8 @@
     "serverInstall": {
       "hint": "AionUi is running on a server. Install the preview component on that server, then retry:",
       "icuNote": "If it still fails to start, install the ICU library on the server (Debian/Ubuntu: apt-get install -y libicu-dev)."
-    }
+    },
+    "readOnlyNotice": "Office preview is read-only. Edit a copy, then refresh the preview."
   },
   "word": {
     "title": "Word Document",

@@ -241,7 +241,9 @@ const UpdateNotificationCard: React.FC = () => {
             {t('update.later')}
           </Button>
           <Button type='primary' size='small' className={ACTION_BTN_CLASS} onClick={actions.startDownload}>
-            {t('update.downloadButton')}
+            {state.autoUpdateAvailable
+              ? t('update.downloadButton')
+              : t('update.releasePage', { defaultValue: 'Open releases page' })}
           </Button>
         </>
       );

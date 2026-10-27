@@ -6,6 +6,7 @@
 
 import React from 'react';
 import WebviewHost from '@/renderer/components/media/WebviewHost';
+import { BROWSER_SESSION_PARTITION } from '@/common/config/constants';
 
 interface URLViewerProps {
   /** URL to display */
@@ -21,7 +22,7 @@ interface URLViewerProps {
  * Delegates to the shared WebviewHost with navigation bar enabled.
  */
 const URLViewer: React.FC<URLViewerProps> = ({ url }) => {
-  return <WebviewHost url={url} showNavBar className='bg-bg-1' />;
+  return <WebviewHost url={url} partition={BROWSER_SESSION_PARTITION} showNavBar className='bg-bg-1' />;
 };
 
 export default URLViewer;

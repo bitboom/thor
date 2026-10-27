@@ -9,7 +9,7 @@ import type { UpdateInfo } from 'electron-updater';
 import type { AppUpdater } from 'electron-updater/out/AppUpdater';
 import type { ProviderRuntimeOptions } from 'electron-updater/out/providers/Provider';
 import { CdnGenericProvider } from '@/process/services/cdnGenericProvider';
-import { buildCdnFeedOptions, CDN_UPDATE_BASE_URL } from '@/process/services/updateFeed';
+import { buildReleaseFeedOptions } from '@/process/services/updateFeed';
 
 const makeRuntimeOptions = (): ProviderRuntimeOptions => ({
   isUseMultipleRangeRequest: true,
@@ -19,13 +19,17 @@ const makeRuntimeOptions = (): ProviderRuntimeOptions => ({
   } as unknown as ProviderRuntimeOptions['executor'],
 });
 
-describe('CDN update feed options', () => {
-  it('builds a custom electron-updater provider pointed at the release CDN', () => {
-    const options = buildCdnFeedOptions();
+describe('Thor update feed options', () => {
+  it('uses only the public Thor GitHub release channel', () => {
+    const options = buildReleaseFeedOptions();
 
-    expect(options.provider).toBe('custom');
-    expect(options.url).toBe(CDN_UPDATE_BASE_URL);
-    expect(options.updateProvider).toBe(CdnGenericProvider);
+    expect(options).toEqual({
+      provider: 'github',
+      owner: 'bitboom',
+      repo: 'thor',
+      private: false,
+      releaseType: 'release',
+    });
   });
 });
 

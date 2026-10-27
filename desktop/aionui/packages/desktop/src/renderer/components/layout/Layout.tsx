@@ -442,11 +442,11 @@ const Layout: React.FC<{
                         }
                       }}
                     >
-                      AionUi
+                      Thor
                     </div>
                   </Tooltip>
                 ) : (
-                  <div className='text-16px text-t-primary collapsed-hidden font-semibold'>AionUi</div>
+                  <div className='text-16px text-t-primary collapsed-hidden font-semibold'>Thor</div>
                 )}
                 {isMobile && !collapsed && (
                   <button

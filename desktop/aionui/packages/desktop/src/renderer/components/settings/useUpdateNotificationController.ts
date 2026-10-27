@@ -6,7 +6,6 @@
 
 import { ipcBridge } from '@/common';
 import type { AutoUpdateStatus, UpdateDownloadProgressEvent } from '@/common/update/updateTypes';
-import { uuid } from '@/common/utils';
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatByteRate, formatByteSize } from '@/renderer/services/i18n/format';
@@ -59,7 +58,7 @@ const reduceNotificationState = (
   event: UpdateNotificationEvent
 ): UpdateNotificationState => updateNotificationReducer(current, event).state;
 
-const RELEASES_PAGE_URL = 'https://github.com/iOfficeAI/AionUi/releases';
+const RELEASES_PAGE_URL = 'https://github.com/bitboom/thor/releases';
 
 const getVersionLabelFromState = (state: UpdateNotificationState): string =>
   state.updateInfo?.version || state.autoUpdateInfo?.version || '';
@@ -336,45 +335,22 @@ export const useUpdateNotificationController = () => {
     }
   }, [t]);
 
-  const startManualInstallDownload = useCallback(async () => {
-    const asset = state.updateInfo?.recommendedAsset;
-    if (!asset) return;
-
-    const callerDownloadId = uuid();
-    dispatch({ type: 'manualDownloadStarted', downloadId: callerDownloadId });
-
-    const res = await ipcBridge.update.download.invoke({
-      downloadId: callerDownloadId,
-      url: asset.url,
-      fallbackUrl: asset.fallbackUrl,
-      file_name: asset.name,
-    });
-    if (!res?.success || !res.data) {
-      dispatch({ type: 'checkError', message: res?.msg || t('update.downloadStartFailed') });
-      return;
-    }
-    dispatch({
-      type: 'manualDownloadReady',
-      downloadId: res.data.downloadId,
-      filePath: res.data.file_path,
-    });
-  }, [state.updateInfo?.recommendedAsset, t]);
+  const startManualInstallDownload = useCallback(() => {
+    void ipcBridge.shell.openExternal.invoke('https://github.com/bitboom/thor/releases');
+  }, []);
 
   const startDownload = useCallback(() => {
     if (state.autoUpdateAvailable) {
       void startAutoDownload();
       return;
     }
-    void startManualInstallDownload();
-  }, [startAutoDownload, startManualInstallDownload, state.autoUpdateAvailable]);
+    void ipcBridge.shell.openExternal.invoke('https://github.com/bitboom/thor/releases');
+  }, [startAutoDownload, state.autoUpdateAvailable]);
 
   const quitAndInstall = useCallback(() => {
     const current = stateRef.current;
     if (current.status === 'preparing-install') return;
-    if (current.downloadPath) {
-      void ipcBridge.shell.openFile.invoke(current.downloadPath);
-      return;
-    }
+    if (current.downloadPath) return;
     const version = getVersionLabelFromState(current);
     dispatch({ type: 'autoPreparingInstall', version });
     setUpdateReadyState({
@@ -392,9 +368,8 @@ export const useUpdateNotificationController = () => {
   }, [dispatch, t]);
 
   const openFile = useCallback(() => {
-    if (!state.downloadPath) return;
-    void ipcBridge.shell.openFile.invoke(state.downloadPath);
-  }, [state.downloadPath]);
+    void ipcBridge.shell.openExternal.invoke('https://github.com/bitboom/thor/releases');
+  }, []);
 
   const showInFolder = useCallback(() => {
     if (!state.downloadPath) return;

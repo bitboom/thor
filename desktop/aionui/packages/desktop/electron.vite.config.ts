@@ -152,7 +152,7 @@ export default defineConfig(({ mode }) => {
       define: {
         'process.env.NODE_ENV': JSON.stringify(mode),
         'process.env.env': JSON.stringify(process.env.env),
-        'process.env.SENTRY_DSN': JSON.stringify(process.env.SENTRY_DSN ?? ''),
+        'process.env.SENTRY_DSN': JSON.stringify(''),
         // Discontinued-build fork flag (see discontinuedBuild.ts). Only AionUi's
         // final `-final` tag build sets IS_DISCONTINUED_BUILD=true in CI.
         'process.env.IS_DISCONTINUED_BUILD': JSON.stringify(process.env.IS_DISCONTINUED_BUILD === 'true'),
@@ -315,7 +315,7 @@ export default defineConfig(({ mode }) => {
         'process.env.NODE_ENV': JSON.stringify(mode),
         'process.env.env': JSON.stringify(process.env.env),
         'process.env.AIONUI_MULTI_INSTANCE': JSON.stringify(process.env.AIONUI_MULTI_INSTANCE ?? ''),
-        'process.env.SENTRY_DSN': JSON.stringify(process.env.SENTRY_DSN ?? ''),
+        'process.env.SENTRY_DSN': JSON.stringify(''),
         // Inject the real AionUi version (root package.json) so renderer code
         // can show it without importing packages/desktop/package.json, which is
         // a workspace-internal placeholder frozen at "0.0.0".

@@ -8,7 +8,6 @@ import React, { createContext, useCallback, useContext, useMemo, useState } from
 import FeedbackReportModal, {
   type FeedbackEventExtra,
   type FeedbackEventTags,
-  type PrefilledScreenshot,
 } from '@/renderer/components/settings/SettingsModal/contents/FeedbackReportModal';
 import type {
   FeedbackDiagnosticsExplicitContext,
@@ -31,26 +30,9 @@ type FeedbackContextValue = {
 
 const FeedbackContext = createContext<FeedbackContextValue | null>(null);
 
-const captureScreenshot = async (): Promise<PrefilledScreenshot | null> => {
-  const capture = window.electronAPI?.captureFeedbackScreenshot;
-  if (!capture) return null;
-  try {
-    const result = await capture();
-    if (!result) return null;
-    return {
-      filename: result.filename,
-      data: new Uint8Array(result.data),
-      type: 'image/png',
-    };
-  } catch {
-    return null;
-  }
-};
-
 export const FeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [visible, setVisible] = useState(false);
   const [defaultModule, setDefaultModule] = useState<string | undefined>(undefined);
-  const [prefilledScreenshots, setPrefilledScreenshots] = useState<PrefilledScreenshot[] | undefined>(undefined);
   const [feedbackTags, setFeedbackTags] = useState<FeedbackEventTags | undefined>(undefined);
   const [feedbackExtra, setFeedbackExtra] = useState<FeedbackEventExtra | undefined>(undefined);
   const [feedbackDiagnosticsContext, setFeedbackDiagnosticsContext] = useState<
@@ -80,18 +62,11 @@ export const FeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       explicitProfiles: options?.diagnosticsProfiles,
       routeAtOpen,
     });
-    if (options?.autoScreenshot) {
-      const shot = await captureScreenshot();
-      setPrefilledScreenshots(shot ? [shot] : undefined);
-    } else {
-      setPrefilledScreenshots(undefined);
-    }
     setVisible(true);
   }, []);
 
   const handleCancel = useCallback(() => {
     setVisible(false);
-    setPrefilledScreenshots(undefined);
     setFeedbackTags(undefined);
     setFeedbackExtra(undefined);
     setFeedbackDiagnosticsContext(undefined);
@@ -106,7 +81,6 @@ export const FeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         visible={visible}
         onCancel={handleCancel}
         defaultModule={defaultModule}
-        prefilledScreenshots={prefilledScreenshots}
         feedbackTags={feedbackTags}
         feedbackExtra={feedbackExtra}
         feedbackDiagnosticsContext={feedbackDiagnosticsContext}

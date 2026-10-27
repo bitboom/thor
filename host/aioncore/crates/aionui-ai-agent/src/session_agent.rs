@@ -1923,7 +1923,11 @@ pub async fn build_session_instance(
     let init = SessionInit {
         mcp_servers,
         skills: config.skills.clone(),
-        preset_context: config.preset_context.clone(),
+        preset_context: if backend_label == "codex" {
+            crate::project_memory_policy::append(config.preset_context.clone(), &workspace)
+        } else {
+            config.preset_context.clone()
+        },
         // Layer 1. `Some` only for a protocol vendor (codex): the backend has to
         // send the skills root itself. An argv vendor (claude) gets its flags
         // through `extra_args` below instead.

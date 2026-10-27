@@ -1,5 +1,8 @@
 #[derive(Debug, thiserror::Error)]
 pub enum OfficeError {
+    #[error("{message}")]
+    RuntimePolicy { code: &'static str, message: String },
+
     #[error("officecli not found")]
     OfficecliNotFound,
 

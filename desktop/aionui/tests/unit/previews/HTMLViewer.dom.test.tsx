@@ -88,7 +88,7 @@ describe('HTMLRenderer', () => {
     vi.clearAllMocks();
   });
 
-  it('loads clean local HTML files through file URL in Electron', () => {
+  it('renders clean local HTML in an isolated opaque-origin guest', () => {
     Object.defineProperty(window, 'electronAPI', {
       configurable: true,
       value: electronAPI,
@@ -103,7 +103,9 @@ describe('HTMLRenderer', () => {
 
     const webview = container.querySelector('webview');
     expect(webview).toBeInTheDocument();
-    expect(webview?.getAttribute('src')).toBe('file:///workspace/financial-wechat-miniapp.html');
+    expect(webview?.getAttribute('src')).toMatch(/^data:text\/html/);
+    expect(webview?.getAttribute('partition')).toMatch(/^thor-html-/);
+    expect(webview?.getAttribute('webpreferences')).not.toContain('allowRunningInsecureContent');
   });
 
   it('keeps dirty local HTML content in memory in Electron', () => {
@@ -140,50 +142,30 @@ describe('HTMLRenderer', () => {
         tag: 'HTMLRenderer',
         message: 'html_preview_source_selected',
         data: expect.objectContaining({
-          source: 'file',
-          reason: 'clean-local-file',
+          source: 'data',
+          reason: 'memory-preview',
           fileName: 'financial-wechat-miniapp.html',
           hasFilePath: true,
           contentLength: 13,
-          src: 'file://financial-wechat-miniapp.html',
+          src: expect.stringMatching(/^data:text\/html/),
         }),
       })
     );
   });
 
-  it('writes level 2 preview console messages as renderer warnings', async () => {
-    Object.defineProperty(window, 'electronAPI', {
-      configurable: true,
-      value: electronAPI,
-    });
-
+  it('does not persist console output from untrusted HTML', async () => {
+    Object.defineProperty(window, 'electronAPI', { configurable: true, value: electronAPI });
     const { container } = render(<HTMLRenderer content='<h1>Test</h1>' file_path='/workspace/index.html' />);
-    const webview = container.querySelector('webview');
-
     await waitFor(() => expect(writeRendererLogInvoke).toHaveBeenCalled());
     vi.clearAllMocks();
-
-    webview?.dispatchEvent(
+    container.querySelector('webview')?.dispatchEvent(
       createConsoleMessageEvent({
         level: 2,
-        line: 64,
-        message: 'cdn.tailwindcss.com should not be used in production.',
-        sourceId: 'https://cdn.tailwindcss.com/',
+        line: 1,
+        message: 'SYNTHETIC_SECRET_CANARY',
+        sourceId: 'https://example.invalid/',
       })
     );
-
-    await waitFor(() =>
-      expect(writeRendererLogInvoke).toHaveBeenCalledWith({
-        level: 'warn',
-        tag: 'HTMLRenderer',
-        message: 'html_preview_console_warning',
-        data: {
-          level: 2,
-          line: 64,
-          message: 'cdn.tailwindcss.com should not be used in production.',
-          source: 'https://cdn.tailwindcss.com/',
-        },
-      })
-    );
+    expect(writeRendererLogInvoke).not.toHaveBeenCalled();
   });
 });

@@ -4,12 +4,11 @@ use std::time::Duration;
 
 use aionui_api_types::{PreviewState, PreviewStatusEvent, WebSocketMessage};
 use aionui_realtime::EventBroadcaster;
-use aionui_runtime::Builder as CmdBuilder;
 use dashmap::DashMap;
 use tokio::sync::Mutex;
 
 use crate::error::OfficeError;
-use crate::officecli_runtime::{OFFICECLI_LATEST_RELEASE_URL, install_command, resolve_officecli_path};
+use crate::officecli_runtime::{VerifiedOfficecli, resolve_officecli_path};
 use crate::port::{allocate_port, is_port_listening};
 use crate::types::DocType;
 
@@ -63,6 +62,7 @@ struct WatchSession {
 
 pub struct OfficecliWatchManager {
     sessions: DashMap<WatchSessionKey, WatchSession>,
+    operations: DashMap<WatchSessionKey, Arc<Mutex<()>>>,
     spawner: Arc<dyn ProcessSpawner>,
     broadcaster: Arc<dyn EventBroadcaster>,
     last_version_check: Mutex<Option<std::time::Instant>>,
@@ -89,6 +89,7 @@ impl OfficecliWatchManager {
     pub fn new(spawner: Arc<dyn ProcessSpawner>, broadcaster: Arc<dyn EventBroadcaster>) -> Self {
         Self {
             sessions: DashMap::new(),
+            operations: DashMap::new(),
             spawner,
             broadcaster,
             last_version_check: Mutex::new(None),
@@ -102,6 +103,12 @@ impl OfficecliWatchManager {
     pub async fn start_for_user(&self, user_id: &str, file_path: &str, doc_type: DocType) -> Result<u16, OfficeError> {
         let resolved = resolve_path(file_path)?;
         let key = session_key(user_id, &resolved, doc_type);
+        let operation = self
+            .operations
+            .entry(key.clone())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone();
+        let _operation = operation.lock().await;
 
         if let Some(entry) = self.sessions.get(&key) {
             if !entry.aborted && entry.process.is_alive() {
@@ -131,6 +138,10 @@ impl OfficecliWatchManager {
                     Some(public_preview_error_message(e)),
                 );
                 Err(match e {
+                    OfficeError::RuntimePolicy { code, message } => OfficeError::RuntimePolicy {
+                        code,
+                        message: message.clone(),
+                    },
                     OfficeError::OfficecliNotFound => OfficeError::OfficecliNotFound,
                     OfficeError::InstallFailed(m) => OfficeError::InstallFailed(m.clone()),
                     OfficeError::StartFailed(m) => OfficeError::StartFailed(m.clone()),
@@ -206,13 +217,74 @@ impl OfficecliWatchManager {
     }
 
     async fn poll_port_ready(&self, port: u16, file_path: &str) -> Result<(), OfficeError> {
-        for _ in 0..POLL_MAX_ATTEMPTS {
-            if is_port_listening(port).await {
+        let deadline =
+            tokio::time::Instant::now() + Duration::from_millis(POLL_INTERVAL_MS * u64::from(POLL_MAX_ATTEMPTS));
+        while tokio::time::Instant::now() < deadline {
+            if tokio::time::timeout(Duration::from_millis(POLL_INTERVAL_MS), is_port_listening(port))
+                .await
+                .unwrap_or(false)
+            {
                 return Ok(());
             }
             tokio::time::sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
         }
         Err(OfficeError::PortTimeout(file_path.to_owned()))
+    }
+
+    /// Refresh from disk without exposing a mutating watch HTTP endpoint. Reuse
+    /// the port so the existing guest URL remains valid; the UI reloads it after
+    /// this authenticated Core request succeeds.
+    pub(crate) async fn restart_for_user(
+        &self,
+        user_id: &str,
+        file_path: &str,
+        doc_type: DocType,
+    ) -> Result<u16, OfficeError> {
+        let resolved = resolve_path(file_path)?;
+        let key = session_key(user_id, &resolved, doc_type);
+        let operation = self
+            .operations
+            .entry(key.clone())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone();
+        let _operation = operation.lock().await;
+        let (_, session) = self
+            .sessions
+            .remove(&key)
+            .ok_or_else(|| OfficeError::StartFailed("No active preview to refresh".into()))?;
+        let port = session.port;
+        session.process.kill();
+        self.broadcast_status_for_user(user_id, doc_type, PreviewState::Starting, None);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while tokio::time::Instant::now() < deadline {
+            if !tokio::time::timeout(Duration::from_millis(100), is_port_listening(port))
+                .await
+                .unwrap_or(false)
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let process = self
+            .spawn_officecli_with_install(user_id, &resolved, port, doc_type)
+            .await?;
+        if let Err(error) = self.poll_port_ready(port, &resolved).await {
+            process.kill();
+            return Err(error);
+        }
+        self.sessions.insert(
+            key,
+            WatchSession {
+                user_id: user_id.to_owned(),
+                port,
+                process,
+                file_path: resolved,
+                doc_type,
+                aborted: false,
+            },
+        );
+        self.broadcast_status_for_user(user_id, doc_type, PreviewState::Ready, None);
+        Ok(port)
     }
 
     pub async fn stop(&self, file_path: &str, doc_type: DocType) {
@@ -225,6 +297,12 @@ impl OfficecliWatchManager {
             Err(_) => return,
         };
         let key = session_key(user_id, &resolved, doc_type);
+        let operation = self
+            .operations
+            .entry(key.clone())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone();
+        let _operation = operation.lock().await;
 
         tokio::time::sleep(Duration::from_millis(STOP_DELAY_MS)).await;
 
@@ -408,12 +486,12 @@ impl ProcessSpawner for DefaultProcessSpawner {
         port: u16,
         _doc_type: DocType,
     ) -> Result<Box<dyn ProcessHandle>, OfficeError> {
-        let officecli = resolve_officecli_path().ok_or(OfficeError::OfficecliNotFound)?;
+        let officecli = resolve_officecli_path()?;
         if !officecli_supports_watch(&officecli).await {
             return Err(OfficeError::OfficecliNotFound);
         }
 
-        let mut builder = CmdBuilder::new(&officecli);
+        let mut builder = officecli.watch_command();
         builder
             .arg("watch")
             .arg(file_path)
@@ -436,31 +514,13 @@ impl ProcessSpawner for DefaultProcessSpawner {
     }
 
     async fn install_officecli(&self) -> Result<(), OfficeError> {
-        let command = install_command();
-        tracing::info!(
-            platform = std::env::consts::OS,
-            "installing officecli via official iOfficeAI/OfficeCli installer"
-        );
-
-        let mut builder = CmdBuilder::clean_cli(&command.program);
-        builder.args(command.args.iter());
-        let output = builder
-            .output()
-            .await
-            .map_err(|e| OfficeError::InstallFailed(e.to_string()))?;
-
-        if !output.status.success() {
-            tracing::warn!(
-                status = ?output.status.code(),
-                "officecli official installer failed"
-            );
-            return Err(OfficeError::InstallFailed("official OfficeCLI installer failed".into()));
-        }
-        Ok(())
+        Err(OfficeError::InstallFailed(
+            "OfficeCLI is shipped in the verified Thor bundle; runtime installation is disabled".into(),
+        ))
     }
 
     async fn is_officecli_installed(&self) -> bool {
-        let Some(officecli) = resolve_officecli_path() else {
+        let Ok(officecli) = resolve_officecli_path() else {
             return false;
         };
 
@@ -468,44 +528,12 @@ impl ProcessSpawner for DefaultProcessSpawner {
     }
 
     async fn check_update(&self, _doc_type: DocType) -> Result<(), OfficeError> {
-        let officecli = resolve_officecli_path().ok_or(OfficeError::OfficecliNotFound)?;
+        // Thor updates OfficeCLI only with its application release. The legacy
+        // periodic callback now validates the pin and never checks the network.
+        let officecli = resolve_officecli_path()?;
         if !officecli_supports_watch(&officecli).await {
             return Err(OfficeError::OfficecliNotFound);
         }
-
-        let mut builder = CmdBuilder::clean_cli(&officecli);
-        builder.arg("--version");
-        let output = builder
-            .output()
-            .await
-            .map_err(|e| OfficeError::StartFailed(e.to_string()))?;
-
-        if !output.status.success() {
-            return Ok(());
-        }
-
-        let local_version = normalize_officecli_version(&String::from_utf8_lossy(&output.stdout));
-        let response = reqwest::Client::new()
-            .get(OFFICECLI_LATEST_RELEASE_URL)
-            .send()
-            .await
-            .map_err(|e| OfficeError::StartFailed(e.to_string()))?;
-        let remote_version = response
-            .url()
-            .path_segments()
-            .and_then(|mut segments| segments.next_back())
-            .map(normalize_officecli_version)
-            .unwrap_or_default();
-
-        if !remote_version.is_empty() && remote_version != local_version {
-            tracing::info!(
-                local_version = %local_version,
-                remote_version = %remote_version,
-                "officecli update available, installing via official installer"
-            );
-            self.install_officecli().await?;
-        }
-
         Ok(())
     }
 }
@@ -536,22 +564,14 @@ fn is_port_in_use_message(message: &str) -> bool {
         || message.contains("os error 10048")
 }
 
-fn normalize_officecli_version(raw: &str) -> String {
-    raw.split_whitespace()
-        .last()
-        .unwrap_or_default()
-        .trim_start_matches('v')
-        .to_owned()
-}
-
-async fn officecli_supports_watch(officecli: &Path) -> bool {
-    let mut version = CmdBuilder::clean_cli(officecli);
+async fn officecli_supports_watch(officecli: &VerifiedOfficecli) -> bool {
+    let mut version = officecli.command();
     version.arg("--version");
     if !version.output().await.is_ok_and(|o| o.status.success()) {
         return false;
     }
 
-    let mut watch_help = CmdBuilder::clean_cli(officecli);
+    let mut watch_help = officecli.command();
     watch_help.args(["watch", "--help"]);
     let ok = watch_help.output().await.is_ok_and(|o| o.status.success());
     if !ok {
@@ -580,6 +600,7 @@ mod tests {
     struct MockProcessHandle {
         alive: AtomicBool,
         killed: AtomicBool,
+        listener: std::sync::Mutex<Option<std::net::TcpListener>>,
     }
 
     impl MockProcessHandle {
@@ -587,6 +608,7 @@ mod tests {
             Self {
                 alive: AtomicBool::new(true),
                 killed: AtomicBool::new(false),
+                listener: std::sync::Mutex::new(None),
             }
         }
     }
@@ -595,6 +617,7 @@ mod tests {
         fn kill(&self) {
             self.alive.store(false, Ordering::SeqCst);
             self.killed.store(true, Ordering::SeqCst);
+            self.listener.lock().unwrap().take();
         }
 
         fn is_alive(&self) -> bool {
@@ -648,13 +671,14 @@ mod tests {
                 return Err(OfficeError::OfficecliNotFound);
             }
 
+            let handle = MockProcessHandle::new();
             if self.start_listener.load(Ordering::SeqCst) {
                 let listener = std::net::TcpListener::bind(format!("127.0.0.1:{port}"))
                     .map_err(|e| OfficeError::StartFailed(e.to_string()))?;
-                std::mem::forget(listener);
+                *handle.listener.lock().unwrap() = Some(listener);
             }
 
-            Ok(Box::new(MockProcessHandle::new()))
+            Ok(Box::new(handle))
         }
 
         async fn install_officecli(&self) -> Result<(), OfficeError> {
@@ -1050,6 +1074,28 @@ mod tests {
         let events = broadcaster.events();
         let last = events.last().unwrap();
         assert_eq!(last.data["state"], "error");
+    }
+
+    #[tokio::test]
+    async fn readonly_refresh_restarts_same_port_and_preserves_user_scope() {
+        let spawner = Arc::new(MockSpawner::new());
+        let broadcaster = Arc::new(RecordingBroadcaster::new());
+        let manager = make_manager(Arc::clone(&spawner), broadcaster);
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("synthetic.docx");
+        std::fs::write(&file, b"synthetic").unwrap();
+        let file = file.to_str().unwrap();
+        let port = manager.start_for_user("user-a", file, DocType::Word).await.unwrap();
+        assert!(manager.restart_for_user("user-b", file, DocType::Word).await.is_err());
+        let (first, second) = tokio::join!(
+            manager.restart_for_user("user-a", file, DocType::Word),
+            manager.restart_for_user("user-a", file, DocType::Word)
+        );
+        assert_eq!(first.unwrap(), port);
+        assert_eq!(second.unwrap(), port);
+        assert_eq!(manager.active_port_for("user-a", file, DocType::Word), Some(port));
+        assert_eq!(spawner.spawn_count.load(Ordering::SeqCst), 3);
+        manager.stop_all();
     }
 
     #[tokio::test(start_paused = true)]

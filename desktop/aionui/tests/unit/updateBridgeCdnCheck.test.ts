@@ -102,7 +102,7 @@ const GITHUB_RELEASES = [
     tag_name: 'v2.1.45',
     name: 'v2.1.45',
     body: 'changelog body',
-    html_url: 'https://github.com/iOfficeAI/AionUi/releases/tag/v2.1.45',
+    html_url: 'https://github.com/bitboom/thor/releases/tag/v2.1.45',
     prerelease: false,
     draft: false,
     assets: [],
@@ -128,7 +128,7 @@ type FetchScenario = {
 const stubFetch = (scenario: FetchScenario) => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.startsWith('https://static.aionui.com/releases/latest')) {
+    if (url.startsWith('https://github.com/bitboom/thor/releases/latest/download/latest')) {
       if (!scenario.cdn) throw new Error('unexpected CDN request');
       return scenario.cdn();
     }
@@ -146,6 +146,13 @@ const ymlResponse = (body: string) => new Response(body, { status: 200 });
 const jsonResponse = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
 describe('update.check CDN-first', () => {
+  it('rejects a renderer request to use another release repository before fetching', async () => {
+    const fetchMock = stubFetch({});
+    const handler = await getCheckHandler();
+    const res = await handler({ repo: 'another/project' });
+    expect(res.success).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -162,9 +169,9 @@ describe('update.check CDN-first', () => {
     expect(res.data?.updateAvailable).toBe(true);
     expect(res.data?.latest?.version).toBe('2.1.45');
     expect(res.data?.latest?.body).toBe('changelog body');
-    expect(res.data?.latest?.htmlUrl).toBe('https://github.com/iOfficeAI/AionUi/releases/tag/v2.1.45');
+    expect(res.data?.latest?.htmlUrl).toBe('https://github.com/bitboom/thor/releases/tag/v2.1.45');
     expect(res.data?.latest?.recommendedAsset?.url).toBe(
-      'https://static.aionui.com/releases/2.1.45/AionUi-2.1.45-mac-arm64.dmg'
+      'https://github.com/bitboom/thor/releases/download/v2.1.45/AionUi-2.1.45-mac-arm64.dmg'
     );
   });
 

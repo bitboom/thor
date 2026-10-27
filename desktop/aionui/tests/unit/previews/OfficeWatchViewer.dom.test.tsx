@@ -24,7 +24,7 @@ describe('OfficeWatchViewer module shape', () => {
     const mod = await import('@/renderer/pages/conversation/Preview/components/viewers/OfficeWatchViewer');
     expect(mod).toBeDefined();
     expect(mod.default).toBeDefined();
-  });
+  }, 60000);
 
   it('default export is a function (React component)', async () => {
     const mod = await import('@/renderer/pages/conversation/Preview/components/viewers/OfficeWatchViewer');
@@ -39,9 +39,9 @@ describe('OfficeWatchViewer module shape', () => {
     expect((mod.default as { length: number }).length).toBeLessThanOrEqual(2);
   });
 
-  it('uses official iOfficeAI OfficeCLI releases page', async () => {
+  it('uses the Thor releases page for bundled repair', async () => {
     const mod = await import('@/renderer/pages/conversation/Preview/components/viewers/OfficeWatchViewer');
-    expect(mod.OFFICECLI_INSTALL_URL).toBe('https://github.com/iOfficeAI/OfficeCLI/releases');
+    expect(mod.OFFICECLI_INSTALL_URL).toBe('https://github.com/bitboom/thor/releases');
   });
 });
 
@@ -105,24 +105,36 @@ describe('resolveOfficeWatchUrl (Electron mode)', () => {
  * panel shows a copyable server-side command instead (issue #3212 follow-up).
  */
 describe('resolveOfficeErrorActions', () => {
+  it('distinguishes bundled missing, integrity and read-only failures and offers Thor repair', async () => {
+    const mod = await import('@/renderer/pages/conversation/Preview/components/viewers/OfficeWatchViewer');
+    const codes = ['OFFICECLI_BUNDLE_MISSING', 'OFFICECLI_INTEGRITY_FAILED', 'OFFICECLI_READONLY_REQUIRED'] as const;
+    expect(new Set(codes.map(mod.officeBundleErrorText)).size).toBe(3);
+    for (const code of codes) {
+      expect(mod.resolveOfficeErrorActions(code, true)).toEqual({
+        showServerInstallGuide: false,
+        showInstallLink: true,
+        showRetry: true,
+      });
+    }
+  });
   const load = async () => {
     const mod = await import('@/renderer/pages/conversation/Preview/components/viewers/OfficeWatchViewer');
     return mod.resolveOfficeErrorActions;
   };
 
-  it('web mode shows the server install guide when officecli is missing', async () => {
+  it('web mode does not offer an unsupported global install', async () => {
     const resolveOfficeErrorActions = await load();
     expect(resolveOfficeErrorActions('OFFICECLI_NOT_FOUND', false)).toEqual({
-      showServerInstallGuide: true,
+      showServerInstallGuide: false,
       showInstallLink: false,
       showRetry: true,
     });
   });
 
-  it('web mode shows the server install guide when auto-install failed', async () => {
+  it('web mode does not offer an incompatible install command', async () => {
     const resolveOfficeErrorActions = await load();
     expect(resolveOfficeErrorActions('OFFICECLI_INSTALL_FAILED', false)).toEqual({
-      showServerInstallGuide: true,
+      showServerInstallGuide: false,
       showInstallLink: false,
       showRetry: true,
     });

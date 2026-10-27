@@ -21,6 +21,7 @@ pub mod manager;
 pub mod mcp_resolve;
 pub mod media;
 pub(crate) mod persistence;
+pub(crate) mod project_memory_policy;
 pub mod protocol;
 pub mod registry;
 pub mod routes;

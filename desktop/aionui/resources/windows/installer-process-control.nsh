@@ -23,7 +23,11 @@ Var /GLOBAL AionUiCurrentOutDir
       if (-not $$path) { $$path = $$proc.Path } \
       if (-not $$path) { return $$false } \
       try { $$full = [System.IO.Path]::GetFullPath($$path) } catch { return $$false } \
-      return $$proc.ProcessId -ne $$installerPid -and $$full.StartsWith($$ownedPrefix, [System.StringComparison]::CurrentCultureIgnoreCase) \
+      if ($$proc.ProcessId -eq $$installerPid -or -not $$full.StartsWith($$ownedPrefix, [System.StringComparison]::OrdinalIgnoreCase)) { return $$false } \
+      $$relative = $$full.Substring($$ownedPrefix.Length); \
+      if ($$relative -ieq '${AIONUI_APP_EXECUTABLE_FILENAME}' -or $$relative -ieq 'resources\thor-release\tools\gh.exe') { return $$true } \
+      $$bundlePrefix = $$ownedPrefix + 'resources\bundled-aioncore\'; \
+      return $$full.StartsWith($$bundlePrefix, [System.StringComparison]::OrdinalIgnoreCase) -and @('aioncore.exe', 'node.exe', 'officecli-win-x64.exe', 'officecli-win-arm64.exe').Contains([System.IO.Path]::GetFileName($$full).ToLowerInvariant()) \
     } \
     $$hits = @(Get-CimInstance -ClassName Win32_Process | Where-Object { Test-AionUiOwnedProcess $$_ }); \
     $$payload = [ordered]@{ schemaVersion = 1; ts = (Get-Date -Format o); session = '$AionUiSessionId'; version = '${VERSION}'; arch = '${AIONUI_TARGET_ARCH}'; updated = ('$AionUiIsUpdated' -eq '1'); instDir = '$INSTDIR'; event = 'process-find'; ownedPrefix = $$ownedPrefix; installerPid = $$installerPid; hits = $$hits.Count; owned = ($$hits.Count -gt 0) }; \
@@ -48,7 +52,11 @@ Var /GLOBAL AionUiCurrentOutDir
       if (-not $$path) { $$path = $$proc.Path } \
       if (-not $$path) { return $$false } \
       try { $$full = [System.IO.Path]::GetFullPath($$path) } catch { return $$false } \
-      return $$proc.ProcessId -ne $$installerPid -and $$full.StartsWith($$ownedPrefix, [System.StringComparison]::CurrentCultureIgnoreCase) \
+      if ($$proc.ProcessId -eq $$installerPid -or -not $$full.StartsWith($$ownedPrefix, [System.StringComparison]::OrdinalIgnoreCase)) { return $$false } \
+      $$relative = $$full.Substring($$ownedPrefix.Length); \
+      if ($$relative -ieq '${AIONUI_APP_EXECUTABLE_FILENAME}' -or $$relative -ieq 'resources\thor-release\tools\gh.exe') { return $$true } \
+      $$bundlePrefix = $$ownedPrefix + 'resources\bundled-aioncore\'; \
+      return $$full.StartsWith($$bundlePrefix, [System.StringComparison]::OrdinalIgnoreCase) -and @('aioncore.exe', 'node.exe', 'officecli-win-x64.exe', 'officecli-win-arm64.exe').Contains([System.IO.Path]::GetFileName($$full).ToLowerInvariant()) \
     } \
     $$all = @(Get-CimInstance -ClassName Win32_Process); \
     $$owned = @($$all | Where-Object { Test-AionUiOwnedProcess $$_ }); \
@@ -114,9 +122,9 @@ Var /GLOBAL AionUiCurrentOutDir
         Add-Content -LiteralPath $$log -Encoding UTF8 -Value ($$payload | ConvertTo-Json -Compress -Depth 8); \
         if ($$resources.Count -eq 0) { \
           if ($$installerSelfLock -and $$installerPid -gt 0) { \
-            $$lockerText = 'AionUi installer(' + $$installerPid + ')'; \
+            $$lockerText = 'Thor installer(' + $$installerPid + ')'; \
             [System.IO.File]::WriteAllText($$lockerListPath, $$lockerText, (New-Object System.Text.UTF8Encoding $$false)); \
-            $$selfLockers = @([pscustomobject]@{ name = 'AionUi installer'; pid = [int]$$installerPid }); \
+            $$selfLockers = @([pscustomobject]@{ name = 'Thor installer'; pid = [int]$$installerPid }); \
             $$payload = [ordered]@{ schemaVersion = 1; ts = (Get-Date -Format o); session = '$AionUiSessionId'; version = '${VERSION}'; arch = '${AIONUI_TARGET_ARCH}'; updated = ('$AionUiIsUpdated' -eq '1'); instDir = '$INSTDIR'; event = 'rm-lockers'; target = $$targetPath; resources = 0; count = 1; blockingProcesses = @($$selfLockers); fallbackReason = 'installer-self-lock'; message = 'The installer process is using the install directory as its current output directory.'; outerInstallerPid = $$installerPid; currentOutDir = $$currentOutDir; installerSelfLock = $$true }; \
             Add-Content -LiteralPath $$log -Encoding UTF8 -Value ($$payload | ConvertTo-Json -Compress -Depth 10); \
             exit 0 \
@@ -156,7 +164,7 @@ Var /GLOBAL AionUiCurrentOutDir
             [pscustomobject]@{ name = $$name; pid = [int]$$_.Process.dwProcessId } \
           }); \
         } \
-        if ($$lockers.Count -eq 0 -and $$installerSelfLock -and $$installerPid -gt 0) { $$lockers = @([pscustomobject]@{ name = 'AionUi installer'; pid = [int]$$installerPid }) }; \
+        if ($$lockers.Count -eq 0 -and $$installerSelfLock -and $$installerPid -gt 0) { $$lockers = @([pscustomobject]@{ name = 'Thor installer'; pid = [int]$$installerPid }) }; \
         $$lockerText = @($$lockers | ForEach-Object { $$_.name + '(' + $$_.pid + ')' }) -join ', '; \
         [System.IO.File]::WriteAllText($$lockerListPath, $$lockerText, (New-Object System.Text.UTF8Encoding $$false)); \
         $$payload = [ordered]@{ schemaVersion = 1; ts = (Get-Date -Format o); session = '$AionUiSessionId'; version = '${VERSION}'; arch = '${AIONUI_TARGET_ARCH}'; updated = ('$AionUiIsUpdated' -eq '1'); instDir = '$INSTDIR'; event = 'rm-lockers'; target = $$targetPath; resources = $$resources.Count; count = $$needed; blockingProcesses = @($$lockers); fallbackReason = ''; message = ''; outerInstallerPid = $$installerPid; currentOutDir = $$currentOutDir; installerSelfLock = $$installerSelfLock }; \
@@ -223,7 +231,7 @@ Var /GLOBAL AionUiCurrentOutDir
     ${If} ${Silent}
       nsExec::Exec `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "& { \
         $$ErrorActionPreference = 'Stop'; \
-        $$appDir = Join-Path $$env:APPDATA 'AionUi'; \
+        $$appDir = Join-Path $$env:APPDATA 'Thor'; \
         $$marker = Join-Path $$appDir 'installer-last-failure.json'; \
         $$log = '$AionUiSessionLogPath'; \
         if (-not $$log) { $$log = Join-Path $$env:TEMP '${AIONUI_FALLBACK_LOG}' }; \

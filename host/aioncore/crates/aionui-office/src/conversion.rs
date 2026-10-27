@@ -13,7 +13,7 @@ use serde_json::Value;
 use tracing::warn;
 
 use crate::error::OfficeError;
-use crate::officecli_runtime::resolve_officecli_path;
+use crate::officecli_runtime::{VerifiedOfficecli, resolve_officecli_with_override};
 
 pub struct ConversionService {
     officecli_path: Option<String>,
@@ -126,7 +126,7 @@ impl ConversionService {
 
         let officecli = resolve_officecli(&self.officecli_path).await?;
 
-        let mut builder = CmdBuilder::clean_cli(&officecli);
+        let mut builder = officecli.command();
         builder.args(["ppt2json", file_path]);
         let output = builder
             .output()
@@ -232,20 +232,8 @@ fn find_executable(name: &str) -> Option<String> {
     which::which(name).ok().map(|p| p.to_string_lossy().into_owned())
 }
 
-async fn resolve_officecli(configured_path: &Option<String>) -> Result<String, OfficeError> {
-    if let Some(path) = configured_path
-        && Path::new(path).exists()
-    {
-        return Ok(path.clone());
-    }
-
-    if let Some(path) = resolve_officecli_path() {
-        return Ok(path.to_string_lossy().into_owned());
-    }
-
-    Err(OfficeError::ToolNotFound(
-        "officecli not installed. Install iOfficeAI/OfficeCli to enable PPT -> JSON conversion".into(),
-    ))
+async fn resolve_officecli(configured_path: &Option<String>) -> Result<VerifiedOfficecli, OfficeError> {
+    resolve_officecli_with_override(configured_path.as_deref().map(Path::new))
 }
 
 #[cfg(test)]
@@ -323,7 +311,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_officecli_without_config_ignores_legacy_managed_prefix() {
+    async fn resolve_officecli_rejects_unverified_legacy_binary_even_when_configured() {
         let tmp = tempfile::tempdir().unwrap();
         let legacy_bin = ["runtime", "node", "tools", "officecli", "bin", "officecli"]
             .into_iter()
@@ -331,9 +319,10 @@ mod tests {
         std::fs::create_dir_all(legacy_bin.parent().unwrap()).unwrap();
         std::fs::write(&legacy_bin, b"#!/bin/sh\nexit 0\n").unwrap();
 
-        if let Ok(resolved) = resolve_officecli(&None).await {
-            assert_ne!(resolved, legacy_bin.to_string_lossy());
-        }
+        let error = resolve_officecli(&Some(legacy_bin.to_string_lossy().into_owned()))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("size mismatch"));
     }
 
     #[tokio::test]

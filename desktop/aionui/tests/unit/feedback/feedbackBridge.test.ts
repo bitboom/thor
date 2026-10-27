@@ -12,7 +12,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { app } from 'electron';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+import { spawn } from 'node:child_process';
+vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
+import { app, net, shell } from 'electron';
 import { collectFeedbackLogAttachment } from '@/process/feedback/logs';
 
 // Table of handlers registered via ipcMain.handle during module import.
@@ -39,7 +43,10 @@ vi.mock('electron', () => ({
   app: {
     getPath: vi.fn(() => '/tmp/aionui-test-logs-nonexistent'),
     getVersion: vi.fn(() => '0.0.0'),
+    isReady: vi.fn(() => true),
   },
+  net: { fetch: vi.fn() },
+  shell: { openExternal: vi.fn() },
   BrowserWindow: {
     fromWebContents: vi.fn(() => currentWindow),
   },
@@ -217,6 +224,184 @@ describe('feedback logs', () => {
       expect(content).toContain('2026/07/02/2026-07-02.aioncore.log');
     } finally {
       rmSync(logsDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('Thor feedback pending state', () => {
+  it('rejects overlapping submit, resolve, browser and verify until the outcome is durable', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'thor-feedback-concurrent-'));
+    const id = '12345678-1234-4234-8234-123456789abc';
+    const payload = { title: 'Test', body: 'Reviewed\n\nThor report ID: ' + id };
+    vi.mocked(app.getPath).mockReturnValue(dir);
+    currentWindow = { isDestroyed: () => false, webContents: {} };
+    let child!: ReturnType<typeof spawn>;
+    let stdout!: PassThrough;
+    vi.mocked(spawn).mockImplementation(() => {
+      child = new EventEmitter() as ReturnType<typeof spawn>;
+      stdout = new PassThrough();
+      Object.assign(child, { stdin: new PassThrough(), stdout, kill: vi.fn() });
+      return child;
+    });
+    const frame = {};
+    const event = { sender: { mainFrame: frame }, senderFrame: frame };
+    const submit = handlers.get('thor:submit-feedback')!;
+    try {
+      const first = submit(event, payload);
+      await expect(submit(event, payload)).rejects.toThrow('still being processed');
+      await expect(handlers.get('thor:feedback-resolve')!(event, id)).rejects.toThrow('still being processed');
+      await expect(handlers.get('thor:feedback-open-browser')!(event, payload)).rejects.toThrow(
+        'still being processed'
+      );
+      await expect(handlers.get('thor:feedback-verify')!(event, id)).rejects.toThrow('still being processed');
+      await vi.waitFor(() => expect(child).toBeDefined());
+      stdout.write(JSON.stringify({ html_url: 'https://github.com/bitboom/thor/issues/42' }));
+      child.emit('close', 0);
+      await first;
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(await handlers.get('thor:feedback-pending')!(event)).toEqual({
+        reportId: id,
+        draft: payload,
+        state: 'submitted',
+        url: 'https://github.com/bitboom/thor/issues/42',
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it('does not allow an old concurrent resolve to delete a newly reserved report', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'thor-feedback-resolve-race-'));
+    const id = '12345678-1234-4234-8234-123456789abc';
+    const nextId = '22345678-1234-4234-8234-123456789abc';
+    const payload = { title: 'Test', body: 'Reviewed\n\nThor report ID: ' + id };
+    const next = { title: 'Next', body: 'Reviewed\n\nThor report ID: ' + nextId };
+    vi.mocked(app.getPath).mockReturnValue(dir);
+    vi.mocked(shell.openExternal).mockResolvedValue();
+    currentWindow = { isDestroyed: () => false, webContents: {} };
+    const frame = {};
+    const event = { sender: { mainFrame: frame }, senderFrame: frame };
+    try {
+      await handlers.get('thor:feedback-open-browser')!(event, payload);
+      const first = handlers.get('thor:feedback-resolve')!(event, id);
+      await expect(handlers.get('thor:feedback-resolve')!(event, id)).rejects.toThrow('still being processed');
+      await expect(handlers.get('thor:feedback-open-browser')!(event, next)).rejects.toThrow('still being processed');
+      await first;
+      await handlers.get('thor:feedback-open-browser')!(event, next);
+      expect(await handlers.get('thor:feedback-pending')!(event)).toEqual({
+        reportId: nextId,
+        draft: next,
+        state: 'pending',
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it('persists the submitted outcome before returning, so a lost IPC reply is recoverable', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'thor-feedback-success-'));
+    const id = '12345678-1234-4234-8234-123456789abc';
+    const payload = { title: 'Test', body: 'Reviewed\n\nThor report ID: ' + id };
+    vi.mocked(app.getPath).mockReturnValue(dir);
+    currentWindow = { isDestroyed: () => false, webContents: {} };
+    vi.mocked(spawn).mockImplementation(() => {
+      const child = new EventEmitter() as ReturnType<typeof spawn>;
+      const stdout = new PassThrough();
+      Object.assign(child, { stdin: new PassThrough(), stdout, kill: vi.fn() });
+      queueMicrotask(() => {
+        stdout.write(JSON.stringify({ html_url: 'https://github.com/bitboom/thor/issues/42' }));
+        child.emit('close', 0);
+      });
+      return child;
+    });
+    const frame = {};
+    const event = { sender: { mainFrame: frame }, senderFrame: frame };
+    try {
+      await handlers.get('thor:submit-feedback')!(event, payload);
+      expect(await handlers.get('thor:feedback-pending')!(event)).toEqual({
+        reportId: id,
+        draft: payload,
+        state: 'submitted',
+        url: 'https://github.com/bitboom/thor/issues/42',
+      });
+      await expect(handlers.get('thor:submit-feedback')!(event, payload)).rejects.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it('persists an uncertain report and blocks duplicate submission until acknowledged', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'thor-feedback-test-'));
+    const id = '12345678-1234-4234-8234-123456789abc';
+    vi.mocked(app.getPath).mockReturnValue(dir);
+    currentWindow = { isDestroyed: () => false, webContents: {} };
+    vi.mocked(spawn).mockImplementation(() => {
+      const child = new EventEmitter() as ReturnType<typeof spawn>;
+      Object.assign(child, { stdin: new PassThrough(), stdout: new PassThrough(), kill: vi.fn() });
+      queueMicrotask(() => child.emit('error', new Error('unavailable')));
+      return child;
+    });
+    const frame = {};
+    const event = { sender: { mainFrame: frame }, senderFrame: frame };
+    const payload = { title: 'Test', body: 'Description\n\nThor report ID: ' + id };
+    const submit = handlers.get('thor:submit-feedback')!;
+    try {
+      await expect(submit(event, payload)).rejects.toThrow();
+      expect(await handlers.get('thor:feedback-pending')!(event)).toEqual({
+        reportId: id,
+        draft: payload,
+        state: 'pending',
+      });
+      await expect(submit(event, payload)).rejects.toThrow();
+      expect(spawn).toHaveBeenCalledTimes(1);
+      await handlers.get('thor:feedback-resolve')!(event, id);
+      expect(await handlers.get('thor:feedback-pending')!(event)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('Thor browser feedback fallback', () => {
+  it('opens only the reviewed draft and verifies the matching public issue before clearing pending state', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'thor-feedback-browser-'));
+    const id = '12345678-1234-4234-8234-123456789abc';
+    vi.mocked(app.getPath).mockReturnValue(dir);
+    currentWindow = { isDestroyed: () => false, webContents: {} };
+    const frame = {};
+    const event = { sender: { mainFrame: frame }, senderFrame: frame };
+    const payload = { title: 'Test title', body: 'Reviewed text\n\nThor report ID: ' + id };
+    vi.mocked(shell.openExternal).mockResolvedValue();
+    vi.mocked(net.fetch).mockResolvedValue({ ok: true, json: async () => [] } as unknown as Response);
+    try {
+      await handlers.get('thor:feedback-open-browser')!(event, payload);
+      const url = new URL(vi.mocked(shell.openExternal).mock.calls[0][0]);
+      expect(url.origin + url.pathname).toBe('https://github.com/bitboom/thor/issues/new');
+      expect(url.searchParams.get('title')).toBe(payload.title);
+      expect(url.searchParams.get('body')).toBe(payload.body);
+      expect(await handlers.get('thor:feedback-verify')!(event, id)).toBeNull();
+      expect(await handlers.get('thor:feedback-pending')!(event)).toEqual({
+        reportId: id,
+        draft: payload,
+        state: 'pending',
+      });
+      vi.mocked(net.fetch).mockResolvedValue({
+        ok: true,
+        json: async () => [
+          { body: payload.body.replace(/\n/g, '\r\n'), html_url: 'https://github.com/bitboom/thor/issues/42' },
+        ],
+      } as unknown as Response);
+      expect(await handlers.get('thor:feedback-verify')!(event, id)).toEqual({
+        url: 'https://github.com/bitboom/thor/issues/42',
+      });
+      expect(await handlers.get('thor:feedback-pending')!(event)).toEqual({
+        reportId: id,
+        draft: payload,
+        state: 'submitted',
+        url: 'https://github.com/bitboom/thor/issues/42',
+      });
+      await expect(handlers.get('thor:feedback-open-browser')!(event, payload)).rejects.toThrow();
+      await handlers.get('thor:feedback-resolve')!(event, id);
+      expect(await handlers.get('thor:feedback-pending')!(event)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

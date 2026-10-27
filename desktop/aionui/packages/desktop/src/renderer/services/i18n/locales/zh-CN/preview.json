@@ -87,7 +87,8 @@
     "serverInstall": {
       "hint": "AionUi 运行在服务器上，预览组件需要安装在该服务器上。请在服务器执行以下命令后重试：",
       "icuNote": "若安装后仍无法启动，请在服务器安装 ICU 库（Debian/Ubuntu：apt-get install -y libicu-dev）。"
-    }
+    },
+    "readOnlyNotice": "Office preview is read-only. Edit a copy, then refresh the preview."
   },
   "word": {
     "title": "Word 文档",

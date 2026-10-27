@@ -10,6 +10,25 @@ import { join, resolve as pathResolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { processImageUri, saveGeneratedImage, executeImageGeneration } from '@/common/chat/imageGenCore';
 
+// Windows accounts without Developer Mode cannot create file symlinks. Probe
+// that capability and retain both file-link tests everywhere it is available.
+function canCreateFileSymlink(): boolean {
+  const dir = mkdtempSync(join(tmpdir(), 'thor-symlink-probe-'));
+  try {
+    const target = join(dir, 'target');
+    writeFileSync(target, 'probe');
+    symlinkSync(target, join(dir, 'link'), 'file');
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES')) return false;
+    throw error;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+const fileSymlinksAvailable = canCreateFileSymlink();
+
 let cleanupDirs: string[] = [];
 
 function createWorkspace(): string {
@@ -140,7 +159,7 @@ describe('processImageUri', () => {
     await expect(processImageUri('nonexistent.png', ws)).rejects.toThrow('Image file not found');
   });
 
-  it('should block a symlink inside the workspace that points outside', async () => {
+  it.skipIf(!fileSymlinksAvailable)('should block a symlink inside the workspace that points outside', async () => {
     const ws = createWorkspace();
     // Secret image lives outside the workspace; a symlink inside the workspace
     // points to it. The lexical containment check passes for the link path, but
@@ -156,12 +175,12 @@ describe('processImageUri', () => {
     const ws = createWorkspace();
     const outsideDir = createWorkspace();
     createImageFile(outsideDir, 'secret.png');
-    symlinkSync(outsideDir, join(ws, 'linked-dir'), 'dir');
+    symlinkSync(outsideDir, join(ws, 'linked-dir'), process.platform === 'win32' ? 'junction' : 'dir');
 
     await expect(processImageUri('linked-dir/secret.png', ws)).rejects.toThrow('Path traversal blocked');
   });
 
-  it('should allow a symlink inside the workspace that stays inside', async () => {
+  it.skipIf(!fileSymlinksAvailable)('should allow a symlink inside the workspace that stays inside', async () => {
     const ws = createWorkspace();
     const imgPath = createImageFile(ws, 'real.png');
     symlinkSync(imgPath, join(ws, 'alias.png'));

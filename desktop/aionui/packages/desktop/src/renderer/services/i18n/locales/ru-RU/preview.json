@@ -89,7 +89,8 @@
     "serverInstall": {
       "hint": "AionUi работает на сервере. Компонент предпросмотра должен быть установлен на этом сервере. Выполните на сервере следующую команду и повторите попытку:",
       "icuNote": "Если запуск по-прежнему не удаётся, установите на сервере библиотеку ICU (Debian/Ubuntu: apt-get install -y libicu-dev)."
-    }
+    },
+    "readOnlyNotice": "Office preview is read-only. Edit a copy, then refresh the preview."
   },
   "word": {
     "title": "Документ Word",

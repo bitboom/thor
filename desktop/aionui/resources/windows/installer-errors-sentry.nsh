@@ -19,12 +19,8 @@
 
 !macro AIONUI_FAIL_UX _CODE _DETAIL _MSG_ZH _MSG_EN _ACTION_ZH _ACTION_EN _DIAGNOSTICS_ZH _DIAGNOSTICS_EN
   !insertmacro AIONUI_SLOG "event=session-end result=fail code=${_CODE} detail=${_DETAIL}"
-  Push $9
-  ${If} ${Silent}
-    StrCpy $9 "auto"
-  ${Else}
-    StrCpy $9 "yes"
-    MessageBox MB_YESNO|MB_ICONSTOP \
+  ${IfNot} ${Silent}
+    MessageBox MB_OK|MB_ICONSTOP \
       "${AIONUI_MSG_INSTALL_FAILED_ZH} (${_CODE})$\r$\n$\r$\n\
       ${_MSG_ZH}$\r$\n$\r$\n\
       ${AIONUI_MSG_SUGGESTED_ACTION_ZH}:$\r$\n${_ACTION_ZH}$\r$\n$\r$\n\
@@ -37,20 +33,9 @@
       ${AIONUI_MSG_SUGGESTED_ACTION_EN}:$\r$\n${_ACTION_EN}$\r$\n$\r$\n\
       ${AIONUI_MSG_DIAGNOSTICS_EN}:$\r$\n${_DIAGNOSTICS_EN}$\r$\n$\r$\n\
       ${AIONUI_MSG_INSTALLER_LOG_EN}:$\r$\n$AionUiSessionLogPath$\r$\n$\r$\n\
-      ${AIONUI_MSG_SEND_REPORT_EN}" \
-      /SD IDNO IDNO +2
-    Goto +2
-    StrCpy $9 "no"
+      ${AIONUI_MSG_SEND_REPORT_EN}"
   ${EndIf}
-  ${If} $9 == "no"
-    !insertmacro AIONUI_SLOG "event=report-skipped reason=user-declined code=${_CODE}"
-  ${ElseIf} $9 == "auto"
-    !insertmacro AIONUI_SLOG "event=report-auto reason=silent code=${_CODE}"
-    !insertmacro AIONUI_REPORT_TO_SENTRY_NOUI "${_CODE}" "${_DETAIL}"
-  ${Else}
-    !insertmacro AIONUI_REPORT_TO_SENTRY "${_CODE}" "${_DETAIL}"
-  ${EndIf}
-  Pop $9
+  !insertmacro AIONUI_SLOG "event=report-skipped reason=privacy-disabled code=${_CODE}"
   !insertmacro AIONUI_CLEAR_ACTIVE_INSTALLER_MARKER
   SetErrorLevel 2
   Quit
@@ -89,12 +74,8 @@
 !macroend
 
 !macro AIONUI_REPORT_TO_SENTRY_IMPL _CODE _DETAIL _NO_UI
-  Push $9
-  InitPluginsDir
-  File /oname=$PLUGINSDIR\aionui-report-installer-failure.ps1 "${PROJECT_DIR}\resources\windows\support\report-installer-failure.ps1"
-  nsExec::Exec `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\aionui-report-installer-failure.ps1" -Dsn "${AIONUI_SENTRY_DSN}" -LogPath "$AionUiSessionLogPath" -Code "${_CODE}" -Detail "${_DETAIL}" -Release "${VERSION}" -Arch "${AIONUI_TARGET_ARCH}" -Session "$AionUiSessionId" -Updated "$AionUiIsUpdated" ${_NO_UI}`
-  Pop $9
-  Pop $9
+  ; Preserve upstream macro callers while keeping every failure local to Thor.
+  !insertmacro AIONUI_SLOG "event=report-skipped reason=privacy-disabled code=${_CODE}"
 !macroend
 
 !endif

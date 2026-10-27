@@ -170,16 +170,17 @@ describe('AutoUpdaterService', () => {
     expect(result).toEqual({ success: true, updateInfo });
   });
 
-  it('configures electron-updater to read stable metadata from the CDN', async () => {
+  it('configures electron-updater to read stable releases from Thor on GitHub', async () => {
     const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
-    const { CdnGenericProvider } = await import('@/process/services/cdnGenericProvider');
 
     autoUpdaterService.resetForTest();
 
     expect(autoUpdaterMock.setFeedURL).toHaveBeenCalledWith({
-      provider: 'custom',
-      url: 'https://static.aionui.com/releases',
-      updateProvider: CdnGenericProvider,
+      provider: 'github',
+      owner: 'bitboom',
+      repo: 'thor',
+      private: false,
+      releaseType: 'release',
     });
   });
 
@@ -604,7 +605,7 @@ describe('AutoUpdaterService', () => {
   it('moves the process cwd to temp before the Windows updater handoff', async () => {
     setPlatform('win32');
     const tempRoot = path.join(process.env.TEMP || process.cwd(), `aionui-updater-cwd-test-${process.pid}`);
-    const expectedCwd = path.join(tempRoot, 'aionui-updater-cwd');
+    const expectedCwd = path.join(tempRoot, 'thor-updater-cwd');
     const chdir = vi.spyOn(process, 'chdir').mockImplementation(() => undefined);
     appMock.getPath.mockImplementation((name: string) => (name === 'temp' ? tempRoot : '/tmp/aionui-test'));
 
