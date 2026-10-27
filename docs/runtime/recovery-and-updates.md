@@ -14,4 +14,6 @@ The reservation UUID is created before the first request. Releasing it records a
 
 `agent/tools/verify-recovery.mjs` exercises real Core with the synthetic ACP fixture: before task start, accepted input before ACP dispatch, unfinished streamed output, and an already persisted result. It also checks reservation rejection, release, a fresh process epoch and delayed-request cancellation. It owns isolated state/processes and accepts an evidence path. No Codex login is required.
 
+The verifier refuses to restart after an unexpected child exit or unproven cleanup. It does not send a termination request to an already-exited process ID. Final evidence is written after cleanup; a cleanup failure prevents a passing result. Verifier regression tests do not establish that a candidate Core passed the recovery scenarios.
+
 The harness tests process termination and restart, not power loss or enterprise side effects. Its reference mode labels the known upstream binary by SHA-256 and does not treat observed reference behavior as acceptance of the patched candidate. Native candidate acceptance and installed desktop update preservation remain separate verification gates.

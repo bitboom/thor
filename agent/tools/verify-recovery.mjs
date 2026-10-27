@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { createLocalCoreClient } from '../adapters/aioncore.mjs';
 import { messageText, runCoreTurn } from '../client.mjs';
+import { createRecoveryProcessOwner } from './owned-recovery-process.mjs';
 
 const execute = promisify(execFile);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -58,32 +59,28 @@ export async function verifyRecovery(options) {
   const workspaceFile = path.join(workspace, 'synthetic-recovery-note.txt');
   const workspaceValue = `Thor invented recovery fact ${randomUUID()}`;
   await writeFile(workspaceFile, workspaceValue, { flag: 'wx' });
-  let child;
   let phase = 'startup';
+  let failure;
   let api;
   let base;
   let expectRejected;
   const evidence = { schemaVersion: 1, synthetic: true, coreSha256, referenceCore: options.reference === true,
     patchedCore: options.reference !== true, realCore: true, realModel: false, installedDesktop: false,
     remoteSideEffectsTested: false, powerLossTested: false, cases: {}, passed: false };
-  const kill = async () => {
-    if (!child?.pid || child.exitCode !== null) return;
-    const owned = child;
-    const exited = new Promise(resolve => owned.once('exit', resolve));
+  const owner = createRecoveryProcessOwner({ terminate: async owned => {
     if (process.platform === 'win32') await execute('taskkill.exe', ['/PID', String(owned.pid), '/T', '/F'], { windowsHide: true });
     else { try { process.kill(-owned.pid, 'SIGKILL'); } catch { owned.kill('SIGKILL'); } }
-    await Promise.race([exited, pause(5000)]);
-    assert.ok(owned.exitCode !== null || owned.signalCode !== null, 'Owned Core did not stop.');
-    child = undefined;
-  };
+  } });
+  const kill = () => owner.stop();
   const start = async () => {
+    owner.assertCanStart();
     const selected = await port();
     const token = randomBytes(32).toString('hex');
     const env = { ...process.env, THOR_CORE_LOCAL_TOKEN: token, AIONUI_BUNDLED_MANAGED_RESOURCES: path.join(options.bundle, 'managed-resources'), CODEX_SQLITE_HOME: path.join(run, 'codex-sqlite') };
     delete env.THOR_CORE_TRUSTED_ORIGIN;
-    child = spawn(options.core, ['--local', '--host', '127.0.0.1', '--port', String(selected), '--data-dir', path.join(run, 'data'),
+    const child = owner.start(() => spawn(options.core, ['--local', '--host', '127.0.0.1', '--port', String(selected), '--data-dir', path.join(run, 'data'),
       '--work-dir', workspace, '--parent-pid', String(process.pid), '--managed-resources-mode', 'bundled', '--log-level', 'error'],
-    { windowsHide: true, detached: process.platform !== 'win32', stdio: 'ignore', env });
+    { windowsHide: true, detached: process.platform !== 'win32', stdio: 'ignore', env }));
     let failed = false; child.once('error', () => { failed = true; });
     base = `http://127.0.0.1:${selected}`;
     api = createLocalCoreClient(base, { headers: { 'X-Thor-Local-Token': token } });
@@ -95,7 +92,7 @@ export async function verifyRecovery(options) {
       else await response.arrayBuffer();
     };
     await wait(async () => {
-      if (failed || child.exitCode !== null) throw new Error('Core exited before recovery acceptance readiness.');
+      if (failed || child.exitCode !== null || child.signalCode !== null) throw new Error('Core exited before recovery acceptance readiness.');
       try { return (await api.get('/api/conversations?limit=1')).success; } catch { return false; }
     }, 'Core startup', 90000);
   };
@@ -215,16 +212,22 @@ export async function verifyRecovery(options) {
     assert.equal(await resume(), true);
     evidence.cases.afterPersistedResult = { passed: true, resultAndStatusUnchanged: true, noAutomaticReplay: true, explicitContinuationSucceeded: true };
     evidence.workspaceFilePreservedAcrossRestarts = true;
-    await kill();
-    evidence.ownedProcessTreeStopped = true;
     evidence.passed = Object.values(evidence.cases).every(value => value.passed);
-    if (options.evidence) await writeFile(options.evidence, `${JSON.stringify(evidence, null, 2)}\n`, { flag: 'wx' });
-    return evidence;
   } catch (error) {
+    failure = error;
     evidence.harnessFailureAt = phase;
-    if (options.evidence) await writeFile(options.evidence, `${JSON.stringify(evidence, null, 2)}\n`, { flag: 'wx' }).catch(() => {});
-    throw error;
-  } finally { await kill(); }
+  } finally {
+    try { await kill(); evidence.ownedProcessTreeStopped = true; }
+    catch (error) {
+      evidence.ownedProcessTreeStopped = false;
+      evidence.harnessFailureAt = 'owned-process-cleanup';
+      failure = failure ? new AggregateError([failure, error], 'Recovery acceptance failed and owned Core cleanup is unproven.') : error;
+    }
+  }
+  if (failure) evidence.passed = false;
+  if (options.evidence) await writeFile(options.evidence, `${JSON.stringify(evidence, null, 2)}\n`, { flag: 'wx' });
+  if (failure) throw failure;
+  return evidence;
 }
 
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {

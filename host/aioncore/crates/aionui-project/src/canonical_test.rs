@@ -70,12 +70,25 @@ fn casing_folds_per_platform() {
         assert_eq!(mixed, lower);
         assert_eq!(
             mixed.as_str(),
-            fixture_uri("file:///users/me/aion").to_ascii_lowercase()
+            if cfg!(windows) {
+                "file:///C:/users/me/aion"
+            } else {
+                "file:///users/me/aion"
+            }
         );
     } else {
         // Linux: two distinct folders.
         assert_ne!(mixed, lower);
     }
+}
+
+#[cfg(windows)]
+#[test]
+fn drive_letter_casing_has_one_canonical_uri() {
+    let lower_drive = super::canonicalize("file:///c:/Users/Me/Aion").unwrap();
+    let upper_drive = super::canonicalize("file:///C:/users/me/aion").unwrap();
+    assert_eq!(lower_drive, upper_drive);
+    assert_eq!(lower_drive.as_str(), "file:///C:/users/me/aion");
 }
 
 #[test]
