@@ -43,6 +43,13 @@ impl RuntimePersistenceCoordinator {
         self.runtime_state.lifecycle_for(conversation_id)
     }
 
+    pub fn record_failure(&self, conversation_id: &str) {
+        self.runtime_state.mark_turn_persistence_failed(conversation_id);
+    }
+    pub fn turn_failed(&self, turn_id: &str) -> bool {
+        self.runtime_state.turn_persistence_failed(turn_id)
+    }
+
     pub fn decide(&self, conversation_id: &str, kind: RuntimeWriteKind) -> RuntimeWriteDecision {
         let lifecycle = self.lifecycle_for(conversation_id);
         let allow = match lifecycle {

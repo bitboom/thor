@@ -80,10 +80,26 @@ const AboutModalContent: React.FC = () => {
         return;
       }
       setUpdateReadyState({ ...updateReadyState, preparing: true });
-      void ipcBridge.autoUpdate.quitAndInstall.invoke().catch(() => {
-        Message.error(t('update.errors.prepareInstallFailed'));
-        setUpdateReadyState({ ...updateReadyState, preparing: false });
-      });
+      void ipcBridge.autoUpdate.quitAndInstall
+        .invoke()
+        .then((result) => {
+          if (result?.status === 'started') return;
+          if (!result || result.status !== 'deferred') throw new Error('Update handoff returned no result.');
+          const key =
+            result.reason === 'active'
+              ? 'update.installDeferredActive'
+              : result.reason === 'open'
+                ? 'update.installDeferredOpen'
+                : result.reason === 'unknown'
+                  ? 'update.installDeferredUnknown'
+                  : 'update.installDeferredUnavailable';
+          Message.warning(t(key));
+          setUpdateReadyState({ ...updateReadyState, preparing: false });
+        })
+        .catch(() => {
+          Message.error(t('update.installDeferredUnavailable'));
+          setUpdateReadyState({ ...updateReadyState, preparing: false });
+        });
       return;
     }
 

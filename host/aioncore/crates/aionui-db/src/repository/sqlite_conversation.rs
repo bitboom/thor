@@ -1213,9 +1213,10 @@ impl IConversationRepository for SqliteConversationRepository {
         let rows = sqlx::query(
             "SELECT c.user_id, m.* FROM messages m \
              INNER JOIN conversations c ON c.id = m.conversation_id \
-             WHERE m.position = 'left' \
-               AND m.status IN ('work', 'pending') \
-               AND m.type IN ('text', 'thinking', 'tool_call', 'tool_group') \
+             WHERE (m.position = 'left' AND m.status IN ('work', 'pending') \
+               AND m.type IN ('text', 'thinking', 'tool_call', 'tool_group', 'acp_tool_call')) \
+               OR (m.position = 'right' AND m.type = 'text' \
+                   AND json_valid(m.content) AND json_extract(m.content, '$.thor_turn_intent.state') IN ('pending', 'pending_delivery')) \
              ORDER BY m.created_at ASC",
         )
         .fetch_all(&self.pool)
@@ -1241,6 +1242,22 @@ impl IConversationRepository for SqliteConversationRepository {
                 })
             })
             .collect::<Result<Vec<_>, sqlx::Error>>()?)
+    }
+
+    async fn settle_turn_intent(&self, user_id: &str, conversation_id: &str, turn_id: &str) -> Result<(), DbError> {
+        sqlx::query(
+            "UPDATE messages SET content = json_set(content, '$.thor_turn_intent.state', 'settled') \
+            WHERE conversation_id = ? AND position = 'right' AND type = 'text' \
+              AND json_extract(content, '$.thor_turn_intent.turn_id') = ? \
+              AND json_extract(content, '$.thor_turn_intent.state') = 'pending' \
+              AND EXISTS(SELECT 1 FROM conversations c WHERE c.id = messages.conversation_id AND c.user_id = ?)",
+        )
+        .bind(conversation_id)
+        .bind(turn_id)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     async fn search_messages(

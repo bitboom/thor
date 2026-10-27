@@ -62,6 +62,14 @@ async function handle(frame) {
     const input = params.prompt.filter(item => item.type === 'text').map(item => item.text).join('\n');
     if (input.includes('THOR_CANCEL_DIAGNOSTIC')) {
       text(state.id, 'THOR_CANCEL_WAITING');
+      // Opt-in crash acceptance needs a durable partial segment. Core flushes
+      // after 20 chunks; ordinary cancellation fixtures keep their old shape.
+      if (process.env.THOR_MOCK_RECOVERY_STREAM === '1') {
+        for (let index = 0; index < 24 && !prompt.cancelled; index++) {
+          text(state.id, ' synthetic pending output');
+          await pause(5);
+        }
+      }
       return;
     }
     if (input.includes('THOR_APPROVAL_DIAGNOSTIC')) {

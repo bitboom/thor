@@ -3,6 +3,18 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// Main-process update reservation; generated before the first HTTP attempt.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateReservationRequest {
+    pub reservation_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateReservationResponse {
+    pub reservation_id: String,
+    pub reserved: bool,
+}
+
 /// Response for `GET /api/settings`.
 ///
 /// Returns all backend system settings with their current values.

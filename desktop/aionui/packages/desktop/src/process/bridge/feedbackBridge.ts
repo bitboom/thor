@@ -317,12 +317,12 @@ ipcMain.handle('thor:feedback-open-browser', async (event, payload: unknown) => 
 ipcMain.handle('thor:feedback-verify', async (event, reportId: unknown) => {
   assertThorSender(event);
   return withFeedbackJournal(async () => {
-    if (
-      typeof reportId !== 'string' ||
-      !validReportId(reportId) ||
-      (await readPendingFeedback())?.reportId !== reportId
-    )
+    const record = await readPendingFeedback();
+    if (typeof reportId !== 'string' || !validReportId(reportId) || record?.reportId !== reportId)
       throw new Error('Pending report changed.');
+    // An old journal may contain only an ID. Its missing reviewed draft cannot
+    // establish equality, so leave it unresolved for explicit manual review.
+    if (!record.draft) return null;
     const response = await net.fetch(
       'https://api.github.com/repos/bitboom/thor/issues?state=all&sort=created&direction=desc&per_page=100',
       { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(10000) }
@@ -330,21 +330,20 @@ ipcMain.handle('thor:feedback-verify', async (event, reportId: unknown) => {
     if (!response.ok) throw new Error('GitHub verification unavailable.');
     const issues: unknown = await response.json();
     if (!Array.isArray(issues)) throw new Error('Unexpected GitHub response.');
-    const marker = '\n\nThor report ID: ' + reportId;
+    const normalize = (value: string) => value.replace(/\r\n/g, '\n');
     const found = issues.find((item: unknown) => {
       if (!item || typeof item !== 'object') return false;
-      const issue = item as { body?: unknown; html_url?: unknown; pull_request?: unknown };
+      const issue = item as { title?: unknown; body?: unknown; html_url?: unknown; pull_request?: unknown };
       return (
         !issue.pull_request &&
+        issue.title === record.draft?.title &&
         typeof issue.body === 'string' &&
-        issue.body.replace(/\r\n/g, '\n').trimEnd().endsWith(marker) &&
+        normalize(issue.body) === normalize(record.draft?.body ?? '') &&
         typeof issue.html_url === 'string' &&
         /^https:\/\/github\.com\/bitboom\/thor\/issues\/\d+$/.test(issue.html_url)
       );
     }) as { html_url: string } | undefined;
     if (!found) return null;
-    const record = await readPendingFeedback();
-    if (!record || record.reportId !== reportId) throw new Error('Pending report changed.');
     await persistOutcome(record, found.html_url);
     return { url: found.html_url };
   });

@@ -1,0 +1,17 @@
+# Interrupted work and update handoff
+
+Core stores a turn receipt inside the accepted user message before dispatch. A normal terminal receipt is settled only for its matching turn ID. A later completion from turn A cannot settle a row rebound to turn B. Startup preserves unfinished text and tool output, records a warning with the prior message/turn identifiers, and marks the interruption without claiming that a remote operation was canceled or undone. No interrupted prompt is replayed by this recovery pass.
+
+An unfinished tool's remote outcome is **unknown**. Its original arguments and partial output remain available for inspection. The user must inspect the saved result and external state before explicitly continuing. This mechanism is an interruption record; it does not provide durable workflow checkpoints, transaction rollback, or general idempotency for external writes.
+
+Queued mid-turn delivery has a separate `pending_delivery` receipt. The parent turn finishing or a delivery badge changing does not prove that this input's output was durably saved. A fallback to a new turn replaces the receipt before dispatch. Other unconfirmed mid-turn receipts conservatively produce an inspection warning after restart, even when some useful output was saved. The warning says that completion could not be durably confirmed, rather than asserting that every operation failed.
+
+If a result or failure-tip write fails, a bounded per-turn failure latch prevents settling the receipt or broadcasting a successful completion boundary. The pending receipt remains recoverable. SQLite tests inject failures in text, tool, and error-tip persistence and include successful output and saved explicit-error controls.
+
+Desktop installation uses an authenticated, atomic reservation over Core's existing turn and runtime-build admission gates. It refuses active work, approvals and initialization. For this preview it also requires a **fresh Core process that has never started an agent runtime**. Restart Thor and install before opening a chat or starting new work. A due scheduled task counts as work and can therefore defer installation. This conservative rule avoids assuming that a removed or apparently idle agent has no remaining background work. It does not kill sessions to make an update eligible.
+
+The reservation UUID is created before the first request. Releasing it records a bounded cancellation tombstone, so a delayed reservation request cannot re-block Core after a timeout. A held reservation blocks new turns, runtime creation and restart. The desktop retains the download when installation is deferred. Separate WebUI mode does not offer this local desktop handoff.
+
+`agent/tools/verify-recovery.mjs` exercises real Core with the synthetic ACP fixture: before task start, accepted input before ACP dispatch, unfinished streamed output, and an already persisted result. It also checks reservation rejection, release, a fresh process epoch and delayed-request cancellation. It owns isolated state/processes and accepts an evidence path. No Codex login is required.
+
+The harness tests process termination and restart, not power loss or enterprise side effects. Its reference mode labels the known upstream binary by SHA-256 and does not treat observed reference behavior as acceptance of the patched candidate. Native candidate acceptance and installed desktop update preservation remain separate verification gates.

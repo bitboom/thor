@@ -85,6 +85,7 @@ import type {
 } from '../types/team/teamTypes';
 import type {
   AutoUpdateReadyResult,
+  AutoUpdateInstallResult,
   AutoUpdateStatus,
   InstallerLastFailureMarker,
   UpdateCheckRequest,
@@ -755,7 +756,7 @@ export const autoUpdate = {
   ),
   download: bridge.buildProvider<IBridgeResponse, void>('auto-update.download'),
   cancelDownload: bridge.buildProvider<IBridgeResponse, void>('auto-update.download.cancel'),
-  quitAndInstall: bridge.buildProvider<void, void>('auto-update.quit-and-install'),
+  quitAndInstall: bridge.buildProvider<AutoUpdateInstallResult, void>('auto-update.quit-and-install'),
   status: bridge.buildEmitter<AutoUpdateStatus>('auto-update.status'),
 };
 

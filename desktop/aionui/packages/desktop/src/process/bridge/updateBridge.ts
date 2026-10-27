@@ -500,7 +500,7 @@ export function initUpdateBridge(): void {
     }
   });
 
-  ipcBridge.autoUpdate.quitAndInstall.provider(async (): Promise<void> => {
-    await autoUpdaterService.quitAndInstall();
+  ipcBridge.autoUpdate.quitAndInstall.provider(async () => {
+    return autoUpdaterService.quitAndInstall();
   });
 }

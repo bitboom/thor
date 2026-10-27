@@ -25,12 +25,16 @@ const autoUpdaterMock = vi.hoisted(() => ({
   downloadUpdate: vi.fn(),
   getOrCreateDownloadHelper: vi.fn(),
   quitAndInstall: vi.fn(),
+  install: vi.fn(),
+  quitAndInstallCalled: false,
+  autoRunAppAfterInstall: true,
   checkForUpdatesAndNotify: vi.fn(),
 }));
 
 const nativeAutoUpdaterMock = vi.hoisted(() => ({
   on: vi.fn(),
   removeListener: vi.fn(),
+  emit: vi.fn(),
 }));
 
 const appMock = vi.hoisted(() => ({
@@ -38,6 +42,7 @@ const appMock = vi.hoisted(() => ({
   getVersion: vi.fn(() => '2.1.13'),
   getPath: vi.fn(() => '/tmp/aionui-test'),
   exit: vi.fn(),
+  quit: vi.fn(),
 }));
 
 vi.mock('electron-updater', () => ({
@@ -87,6 +92,9 @@ describe('AutoUpdaterService', () => {
     autoUpdaterMock.allowPrerelease = false;
     autoUpdaterMock.allowDowngrade = false;
     autoUpdaterMock.channel = undefined;
+    autoUpdaterMock.quitAndInstallCalled = false;
+    autoUpdaterMock.autoRunAppAfterInstall = true;
+    autoUpdaterMock.install.mockReset().mockReturnValue(true);
     appMock.getPath.mockImplementation(() => '/tmp/aionui-test');
     delete (autoUpdaterMock as { updateInfoAndProvider?: unknown }).updateInfoAndProvider;
     appMock.isPackaged = false;
@@ -94,6 +102,11 @@ describe('AutoUpdaterService', () => {
     delete process.env.AIONUI_DEBUG_AUTO_UPDATE_CURRENT_VERSION;
     nativeAutoUpdaterMock.on.mockReset();
     nativeAutoUpdaterMock.removeListener.mockReset();
+    autoUpdaterMock.quitAndInstall.mockReset();
+    autoUpdaterMock.quitAndInstall.mockImplementation(() => {
+      const handler = nativeAutoUpdaterMock.on.mock.calls.findLast((call) => call[0] === 'before-quit-for-update')?.[1];
+      handler?.();
+    });
     Object.defineProperty(autoUpdaterMock, 'currentVersion', {
       configurable: true,
       value: { version: '2.1.13' },
@@ -104,6 +117,96 @@ describe('AutoUpdaterService', () => {
     vi.clearAllTimers();
     vi.useRealTimers();
     setPlatform(originalPlatform);
+  });
+
+  it('fails closed when the Core guard is missing or reports active work', async () => {
+    setPlatform('win32');
+    const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
+    autoUpdaterService.initialize();
+    await expect(autoUpdaterService.quitAndInstall()).resolves.toEqual({ status: 'deferred', reason: 'unavailable' });
+    autoUpdaterService.setBeforeQuitAndInstall(async () => ({ ok: false, reason: 'active' }));
+    await expect(autoUpdaterService.quitAndInstall()).resolves.toEqual({ status: 'deferred', reason: 'active' });
+    expect(autoUpdaterMock.install).not.toHaveBeenCalled();
+    expect(autoUpdaterMock.autoInstallOnAppQuit).toBe(false);
+  });
+
+  it('retains the reservation when installer handoff outcome is unknown', async () => {
+    setPlatform('darwin');
+    vi.useFakeTimers();
+    const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
+    const rollback = vi.fn(async () => {});
+    autoUpdaterService.initialize();
+    getUpdateDownloadedHandler()({ version: '2.2.0' });
+    getNativeUpdateDownloadedHandler()();
+    autoUpdaterService.setBeforeQuitAndInstall(async () => ({ ok: true, rollback }));
+    autoUpdaterMock.quitAndInstall.mockImplementation(() => {});
+    const result = autoUpdaterService.quitAndInstall();
+    await vi.advanceTimersByTimeAsync(10000);
+    await expect(result).resolves.toEqual({ status: 'deferred', reason: 'unknown' });
+    expect(rollback).not.toHaveBeenCalled();
+    expect(appMock.exit).not.toHaveBeenCalled();
+  });
+
+  it('allows only one concurrent installation attempt while reservation is pending', async () => {
+    setPlatform('win32');
+    const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
+    let finish!: (result: { ok: true; rollback: () => Promise<void> }) => void;
+    autoUpdaterService.initialize();
+    autoUpdaterService.setBeforeQuitAndInstall(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const first = autoUpdaterService.quitAndInstall();
+    await Promise.resolve();
+    await expect(autoUpdaterService.quitAndInstall()).resolves.toEqual({ status: 'deferred', reason: 'active' });
+    finish({ ok: true, rollback: async () => {} });
+    await expect(first).resolves.toEqual({ status: 'started' });
+    expect(autoUpdaterMock.install).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the Core reservation when updater reports no handoff started', async () => {
+    setPlatform('win32');
+    const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
+    const rollback = vi.fn(async () => {});
+    autoUpdaterService.initialize();
+    autoUpdaterService.setBeforeQuitAndInstall(async () => ({ ok: true, rollback }));
+    autoUpdaterMock.install.mockReturnValue(false);
+    await expect(autoUpdaterService.quitAndInstall()).resolves.toEqual({ status: 'deferred', reason: 'unavailable' });
+    expect(rollback).toHaveBeenCalledTimes(1);
+    expect(appMock.exit).not.toHaveBeenCalled();
+  });
+
+  it('retains the reservation when a Windows installer call throws or was already in progress', async () => {
+    setPlatform('win32');
+    const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
+    const rollback = vi.fn(async () => {});
+    autoUpdaterService.initialize();
+    const preflight = vi.fn(async () => ({ ok: true as const, rollback }));
+    autoUpdaterService.setBeforeQuitAndInstall(preflight);
+    autoUpdaterMock.install.mockImplementationOnce(() => {
+      throw new Error('synthetic ambiguous error');
+    });
+    await expect(autoUpdaterService.quitAndInstall()).resolves.toEqual({ status: 'deferred', reason: 'unknown' });
+    autoUpdaterMock.quitAndInstallCalled = true;
+    await expect(autoUpdaterService.quitAndInstall()).resolves.toEqual({ status: 'deferred', reason: 'unknown' });
+    expect(autoUpdaterMock.install).toHaveBeenCalledTimes(1);
+    expect(preflight).toHaveBeenCalledTimes(1);
+    expect(rollback).not.toHaveBeenCalled();
+    expect(appMock.quit).not.toHaveBeenCalled();
+  });
+
+  it('does not release when electron-updater already has a handoff in progress', async () => {
+    setPlatform('win32');
+    const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
+    const rollback = vi.fn(async () => {});
+    autoUpdaterService.initialize();
+    autoUpdaterService.setBeforeQuitAndInstall(async () => ({ ok: true, rollback }));
+    autoUpdaterMock.quitAndInstallCalled = true;
+    await expect(autoUpdaterService.quitAndInstall()).resolves.toEqual({ status: 'deferred', reason: 'unknown' });
+    expect(autoUpdaterMock.install).not.toHaveBeenCalled();
+    expect(rollback).not.toHaveBeenCalled();
   });
 
   it('does not use the stable CDN updater when prerelease manual mode is enabled', async () => {
@@ -416,7 +519,7 @@ describe('AutoUpdaterService', () => {
 
   it('waits on macOS when service downloaded but native install readiness has not arrived', async () => {
     setPlatform('darwin');
-    const cleanup = vi.fn();
+    const cleanup = vi.fn(async () => ({ ok: true as const, rollback: async () => {} }));
     const statuses: Array<{ status: string; error?: string }> = [];
     const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
 
@@ -485,7 +588,7 @@ describe('AutoUpdaterService', () => {
 
   it('resets macOS native readiness when a new update check starts', async () => {
     setPlatform('darwin');
-    const cleanup = vi.fn();
+    const cleanup = vi.fn(async () => ({ ok: true as const, rollback: async () => {} }));
     const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
 
     autoUpdaterService.initialize();
@@ -525,7 +628,7 @@ describe('AutoUpdaterService', () => {
     expect(autoUpdaterMock.quitAndInstall).not.toHaveBeenCalled();
   });
 
-  it('broadcasts an error when pre-install cleanup fails after macOS readiness', async () => {
+  it('defers safely when pre-install check fails after macOS readiness', async () => {
     setPlatform('darwin');
     const cleanupError = new Error('cleanup failed');
     const statuses: Array<{ status: string; error?: string }> = [];
@@ -542,12 +645,8 @@ describe('AutoUpdaterService', () => {
     await Promise.resolve();
     getNativeUpdateDownloadedHandler()();
 
-    await expect(installPromise).rejects.toThrow('cleanup failed');
+    await expect(installPromise).resolves.toEqual({ status: 'deferred', reason: 'unavailable' });
     expect(autoUpdaterMock.quitAndInstall).not.toHaveBeenCalled();
-    expect(statuses.at(-1)).toEqual({
-      status: 'error',
-      error: 'update.errors.prepareInstallFailed',
-    });
   });
 
   it('does not force exit when quitAndInstall handoff throws', async () => {
@@ -559,22 +658,20 @@ describe('AutoUpdaterService', () => {
       throw new Error('handoff failed');
     });
     autoUpdaterService.initialize();
+    const rollback = vi.fn(async () => {});
+    autoUpdaterService.setBeforeQuitAndInstall(async () => ({ ok: true, rollback }));
     autoUpdaterService.on('update-status', (status: { status: string; error?: string }) => statuses.push(status));
     getUpdateDownloadedHandler()({ version: '2.2.0' });
     getNativeUpdateDownloadedHandler()();
 
-    await expect(autoUpdaterService.quitAndInstall()).rejects.toThrow('update.errors.prepareInstallFailed');
-
+    await expect(autoUpdaterService.quitAndInstall()).resolves.toEqual({ status: 'deferred', reason: 'unknown' });
+    expect(rollback).not.toHaveBeenCalled();
     expect(appMock.exit).not.toHaveBeenCalled();
-    expect(statuses.at(-1)).toEqual({
-      status: 'error',
-      error: 'update.errors.prepareInstallFailed',
-    });
   });
 
   it('keeps non-macOS quitAndInstall behavior immediate', async () => {
     setPlatform('win32');
-    const cleanup = vi.fn();
+    const cleanup = vi.fn(async () => ({ ok: true as const, rollback: async () => {} }));
     const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
 
     autoUpdaterService.initialize();
@@ -583,23 +680,23 @@ describe('AutoUpdaterService', () => {
     await autoUpdaterService.quitAndInstall();
 
     expect(cleanup).toHaveBeenCalledTimes(1);
-    expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledWith(false, true);
-    expect(nativeAutoUpdaterMock.on).not.toHaveBeenCalled();
+    expect(autoUpdaterMock.install).toHaveBeenCalledWith(true, true);
   });
 
-  it('uses a non-silent handoff for user-initiated Windows installs without changing app-quit installs', async () => {
+  it('uses a silent handoff with relaunch and does not install automatically on ordinary quit', async () => {
     setPlatform('win32');
-    const cleanup = vi.fn();
+    const cleanup = vi.fn(async () => ({ ok: true as const, rollback: async () => {} }));
     const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
 
     autoUpdaterService.initialize();
     autoUpdaterService.setBeforeQuitAndInstall(cleanup);
+    autoUpdaterMock.autoRunAppAfterInstall = false;
 
     await autoUpdaterService.quitAndInstall();
 
     expect(cleanup).toHaveBeenCalledTimes(1);
-    expect(autoUpdaterMock.autoInstallOnAppQuit).toBe(true);
-    expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledWith(false, true);
+    expect(autoUpdaterMock.autoInstallOnAppQuit).toBe(false);
+    expect(autoUpdaterMock.install).toHaveBeenCalledWith(true, true);
   });
 
   it('moves the process cwd to temp before the Windows updater handoff', async () => {
@@ -612,11 +709,12 @@ describe('AutoUpdaterService', () => {
     try {
       const { autoUpdaterService } = await import('@/process/services/autoUpdaterService');
       autoUpdaterService.initialize();
+      autoUpdaterService.setBeforeQuitAndInstall(async () => ({ ok: true, rollback: async () => {} }));
 
       await autoUpdaterService.quitAndInstall();
 
       expect(chdir).toHaveBeenCalledWith(expectedCwd);
-      expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledWith(false, true);
+      expect(autoUpdaterMock.install).toHaveBeenCalledWith(true, true);
     } finally {
       chdir.mockRestore();
       rmSync(tempRoot, { recursive: true, force: true });

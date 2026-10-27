@@ -4215,6 +4215,11 @@ async fn midturn_steer_rejection_turn_ended_falls_back_to_a_new_turn() {
         .collect();
     assert_eq!(rows.len(), 1, "the fallback must reuse the row, not duplicate it");
     assert_eq!(rows[0].status.as_deref(), Some("finish"));
+    let receipt: serde_json::Value = serde_json::from_str(&rows[0].content).unwrap();
+    assert_eq!(
+        receipt["thor_turn_intent"]["turn_id"], response.turn_id,
+        "fallback must replace the prior turn's receipt before dispatch"
+    );
     wait_for_turn_released(&svc, &conv.id).await;
 }
 
@@ -6305,7 +6310,7 @@ async fn send_message_persists_factory_resolved_workspace() {
 }
 
 #[tokio::test]
-async fn startup_recovery_closes_stale_runtime_messages_without_failure_tip() {
+async fn startup_recovery_preserves_interrupted_work_and_durable_notice() {
     let (svc, _broadcaster, repo, _task_mgr) = make_service();
     let conv = svc.create("user_1", make_create_req()).await.unwrap();
 
@@ -6359,17 +6364,338 @@ async fn startup_recovery_closes_stale_runtime_messages_without_failure_tip() {
         .unwrap()
         .items;
     let visible = messages.iter().find(|message| message.id == "visible-stale").unwrap();
-    assert_eq!(visible.status.as_deref(), Some("finish"));
+    assert_eq!(visible.status.as_deref(), Some("error"));
     assert!(!visible.hidden);
 
     let empty = messages.iter().find(|message| message.id == "empty-stale").unwrap();
-    assert_eq!(empty.status.as_deref(), Some("finish"));
+    assert_eq!(empty.status.as_deref(), Some("error"));
     assert!(empty.hidden);
 
     assert!(
-        messages.iter().all(|message| message.r#type != "tips"),
-        "startup recovery must not write failure tips"
+        messages
+            .iter()
+            .any(|message| message.r#type == "tips" && message.content.contains("THOR_WORK_INTERRUPTED")),
+        "startup recovery must durably explain interrupted work"
     );
+    let content: serde_json::Value = serde_json::from_str(&visible.content).unwrap();
+    assert_eq!(content["content"], "partial output");
+    assert_eq!(content["thor_recovery"]["remote_outcome"], "unknown");
+    svc.recover_stale_runtime_state_on_startup().await;
+    assert_eq!(repo.list_stale_runtime_messages().await.unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn startup_recovery_retries_when_notice_was_saved_before_process_exit() {
+    let db = init_database_memory().await.unwrap();
+    seed_test_user(db.pool(), "user_1").await;
+    let repo = Arc::new(aionui_db::SqliteConversationRepository::new(db.pool().clone()));
+    let svc = ConversationService::new(
+        std::env::temp_dir(),
+        Arc::new(MockBroadcaster::new()),
+        Arc::new(FixedSkillResolver { names: vec![] }),
+        Arc::new(MockTaskManager::new()),
+        repo.clone(),
+        Arc::new(StubAgentMetadataRepo),
+        Arc::new(StubAcpSessionRepo::default()),
+    );
+    let conv = svc.create("user_1", make_create_req()).await.unwrap();
+    let stale = MessageRow {
+        id: "retry-stale".into(),
+        conversation_id: conv.id.clone(),
+        msg_id: Some("retry-stale".into()),
+        r#type: "acp_tool_call".into(),
+        content: json!({"session_id":"session-1","update":{"tool_call_id":"operation-1","status":"in_progress","raw_output":{"partial":"saved partial tool output"}}})
+            .to_string(),
+        position: Some("left".into()),
+        status: Some("work".into()),
+        hidden: false,
+        created_at: 1,
+        backend_turn_id: None,
+    };
+    repo.insert_message("user_1", &stale).await.unwrap();
+    let notice = MessageRow {
+        id: "thor-recovery-retry-stale".into(),
+        r#type: "tips".into(),
+        content: json!({"content":"interrupted","type":"warning"}).to_string(),
+        status: Some("error".into()),
+        ..stale.clone()
+    };
+    repo.insert_message("user_1", &notice).await.unwrap();
+    let pending_user = MessageRow {
+        id: "accepted-before-dispatch".into(),
+        msg_id: Some("accepted-before-dispatch".into()),
+        r#type: "text".into(),
+        position: Some("right".into()),
+        status: Some("finish".into()),
+        content:
+            json!({"content":"accepted input","thor_turn_intent":{"turn_id":"before-dispatch-turn","state":"pending"}})
+                .to_string(),
+        ..stale.clone()
+    };
+    repo.insert_message("user_1", &pending_user).await.unwrap();
+    repo.settle_turn_intent("user_1", &conv.id, "old-unrelated-turn")
+        .await
+        .unwrap();
+    let untouched = repo
+        .get_message("user_1", &conv.id, &pending_user.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&untouched.content).unwrap()["thor_turn_intent"]["state"],
+        "pending"
+    );
+    let completed_user = MessageRow {
+        id: "completed-user".into(),
+        msg_id: Some("completed-user".into()),
+        content: json!({"content":"completed input","thor_turn_intent":{"turn_id":"complete-turn","state":"pending"}})
+            .to_string(),
+        ..pending_user.clone()
+    };
+    repo.insert_message("user_1", &completed_user).await.unwrap();
+    repo.settle_turn_intent("user_1", &conv.id, "complete-turn")
+        .await
+        .unwrap();
+    let queued = MessageRow {
+        id: "queued-midturn-A".into(),
+        msg_id: Some("queued-midturn-A".into()),
+        status: Some("pending".into()),
+        content: json!({"content":"queued input","thor_turn_intent":{"turn_id":"parent-A","state":"pending_delivery"}})
+            .to_string(),
+        ..pending_user.clone()
+    };
+    repo.insert_message("user_1", &queued).await.unwrap();
+    repo.settle_turn_intent("user_1", &conv.id, "parent-A").await.unwrap();
+    // The delivery badge can flip before fallback B is bound; neither event
+    // is proof that this queued input's output was durably completed.
+    repo.update_message(
+        "user_1",
+        &conv.id,
+        &queued.id,
+        &MessageRowUpdate {
+            status: Some(Some("finish".into())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let before_crash = repo.get_message("user_1", &conv.id, &queued.id).await.unwrap().unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&before_crash.content).unwrap()["thor_turn_intent"]["state"],
+        "pending_delivery"
+    );
+    svc.recover_stale_runtime_state_on_startup().await;
+    assert!(repo.list_stale_runtime_messages().await.unwrap().is_empty());
+    let saved = repo.get_message("user_1", &conv.id, &stale.id).await.unwrap().unwrap();
+    assert_eq!(saved.status.as_deref(), Some("error"));
+    let content: serde_json::Value = serde_json::from_str(&saved.content).unwrap();
+    assert_eq!(content["update"]["status"], "failed");
+    assert_eq!(content["update"]["tool_call_id"], "operation-1");
+    assert_eq!(content["update"]["raw_output"]["partial"], "saved partial tool output");
+    assert_eq!(content["thor_recovery"]["remote_outcome"], "unknown");
+    svc.recover_stale_runtime_state_on_startup().await;
+    let rows = repo
+        .list_messages_page(
+            "user_1",
+            &conv.id,
+            &MessagePageParams {
+                limit: 20,
+                direction: MessagePageDirection::InitialLatest,
+            },
+        )
+        .await
+        .unwrap()
+        .items;
+    assert_eq!(rows.iter().filter(|row| row.id == notice.id).count(), 1);
+    let pending = rows.iter().find(|row| row.id == pending_user.id).unwrap();
+    let pending_content: serde_json::Value = serde_json::from_str(&pending.content).unwrap();
+    assert_eq!(pending_content["thor_turn_intent"]["state"], "interrupted");
+    assert_eq!(
+        pending_content["thor_recovery"]["prior_turn_id"],
+        "before-dispatch-turn"
+    );
+    let completed = rows.iter().find(|row| row.id == completed_user.id).unwrap();
+    let completed_content: serde_json::Value = serde_json::from_str(&completed.content).unwrap();
+    assert_eq!(completed_content["thor_turn_intent"]["state"], "settled");
+    assert!(completed_content.get("thor_recovery").is_none());
+    let queued_recovered = rows.iter().find(|row| row.id == queued.id).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&queued_recovered.content).unwrap()["thor_turn_intent"]["state"],
+        "interrupted"
+    );
+    db.close().await;
+}
+
+#[tokio::test]
+async fn failed_result_persistence_keeps_receipt_pending_until_recovery() {
+    use crate::stream_persistence::{StreamPersistenceAdapter, TextSegmentState};
+    let db = init_database_memory().await.unwrap();
+    seed_test_user(db.pool(), "user_1").await;
+    let repo = Arc::new(aionui_db::SqliteConversationRepository::new(db.pool().clone()));
+    let broadcaster = Arc::new(MockBroadcaster::new());
+    let svc = ConversationService::new(
+        std::env::temp_dir(),
+        broadcaster.clone(),
+        Arc::new(FixedSkillResolver { names: vec![] }),
+        Arc::new(MockTaskManager::new()),
+        repo.clone(),
+        Arc::new(StubAgentMetadataRepo),
+        Arc::new(StubAcpSessionRepo::default()),
+    );
+    for kind in ["text", "tool_call", "tips", "send_tip"] {
+        let conv = svc.create("user_1", make_create_req()).await.unwrap();
+        let turn = format!("fault-{kind}");
+        let user = MessageRow {
+            id: format!("user-{kind}"),
+            conversation_id: conv.id.clone(),
+            msg_id: None,
+            r#type: "text".into(),
+            content: json!({"content":"synthetic input","thor_turn_intent":{"turn_id":turn,"state":"pending"}})
+                .to_string(),
+            position: Some("right".into()),
+            status: Some("finish".into()),
+            hidden: false,
+            created_at: 1,
+            backend_turn_id: None,
+        };
+        repo.insert_message("user_1", &user).await.unwrap();
+        let claim = svc.runtime_state().try_claim_turn(&conv.id, &turn).unwrap();
+        let stored_kind = if kind == "send_tip" { "tips" } else { kind };
+        sqlx::query(&format!("CREATE TRIGGER synthetic_persist_fail BEFORE INSERT ON messages WHEN NEW.type = '{stored_kind}' AND NEW.position != 'right' BEGIN SELECT RAISE(ABORT, 'synthetic transient persistence failure'); END"))
+            .execute(db.pool()).await.unwrap();
+        let writer = StreamPersistenceAdapter::new(
+            "user_1".into(),
+            conv.id.clone(),
+            "response".into(),
+            repo.clone(),
+            Some(svc.runtime_persistence()),
+        );
+        match kind {
+            "text" => {
+                assert!(
+                    writer
+                        .finalize_text_segment(
+                            TextSegmentState {
+                                id: "failed-text".into(),
+                                buffer: "partial synthetic result".into(),
+                                created_at: 2,
+                                record_created: false,
+                                flush_counter: 0
+                            },
+                            "finish"
+                        )
+                        .await
+                        .is_none()
+                );
+            }
+            "tool_call" => {
+                writer
+                    .persist_tool_call(&ToolCallEventData {
+                        call_id: "failed-tool".into(),
+                        name: "synthetic".into(),
+                        args: json!({}),
+                        status: ToolCallStatus::Completed,
+                        input: None,
+                        output: Some("saved remote outcome".into()),
+                        description: None,
+                        parent_call_id: None,
+                    })
+                    .await
+            }
+            "send_tip" => {
+                assert!(
+                    svc.persist_send_failure_tip(
+                        "user_1",
+                        &conv.id,
+                        &AgentSendError::from_agent_error(AgentError::BadRequest("synthetic send failure".into())),
+                        None
+                    )
+                    .await
+                    .is_none()
+                );
+            }
+            _ => {
+                writer
+                    .persist_error_tip(&ErrorEventData::legacy("synthetic known error", None))
+                    .await
+            }
+        }
+        assert!(svc.runtime_state().turn_persistence_failed(&turn));
+        drop(claim);
+        broadcaster.take_events();
+        svc.complete_turn("user_1", &conv.id, &turn).await;
+        assert!(
+            broadcaster
+                .take_events()
+                .iter()
+                .all(|event| event.name != "turn.completed")
+        );
+        let pending = repo.get_message("user_1", &conv.id, &user.id).await.unwrap().unwrap();
+        let content: serde_json::Value = serde_json::from_str(&pending.content).unwrap();
+        assert_eq!(content["thor_turn_intent"]["state"], "pending");
+        sqlx::query("DROP TRIGGER synthetic_persist_fail")
+            .execute(db.pool())
+            .await
+            .unwrap();
+        svc.recover_stale_runtime_state_on_startup().await;
+        let recovered = repo.get_message("user_1", &conv.id, &user.id).await.unwrap().unwrap();
+        let content: serde_json::Value = serde_json::from_str(&recovered.content).unwrap();
+        assert_eq!(content["thor_turn_intent"]["state"], "interrupted");
+    }
+    // Successful output and a successfully saved explicit error both settle.
+    for is_error in [false, true] {
+        let conv = svc.create("user_1", make_create_req()).await.unwrap();
+        let turn = format!("successful-{is_error}");
+        let user = MessageRow {
+            id: format!("normal-user-{is_error}"),
+            conversation_id: conv.id.clone(),
+            msg_id: None,
+            r#type: "text".into(),
+            content: json!({"content":"synthetic input","thor_turn_intent":{"turn_id":turn,"state":"pending"}})
+                .to_string(),
+            position: Some("right".into()),
+            status: Some("finish".into()),
+            hidden: false,
+            created_at: 1,
+            backend_turn_id: None,
+        };
+        repo.insert_message("user_1", &user).await.unwrap();
+        let claim = svc.runtime_state().try_claim_turn(&conv.id, &turn).unwrap();
+        let writer = StreamPersistenceAdapter::new(
+            "user_1".into(),
+            conv.id.clone(),
+            "response".into(),
+            repo.clone(),
+            Some(svc.runtime_persistence()),
+        );
+        if is_error {
+            writer
+                .persist_error_tip(&ErrorEventData::legacy("synthetic known error", None))
+                .await;
+        } else {
+            assert!(
+                writer
+                    .finalize_text_segment(
+                        TextSegmentState {
+                            id: "saved-text".into(),
+                            buffer: "saved result".into(),
+                            created_at: 2,
+                            record_created: false,
+                            flush_counter: 0
+                        },
+                        "finish"
+                    )
+                    .await
+                    .is_some()
+            );
+        }
+        drop(claim);
+        svc.complete_turn("user_1", &conv.id, &turn).await;
+        let saved = repo.get_message("user_1", &conv.id, &user.id).await.unwrap().unwrap();
+        let content: serde_json::Value = serde_json::from_str(&saved.content).unwrap();
+        assert_eq!(content["thor_turn_intent"]["state"], "settled");
+    }
+    db.close().await;
 }
 
 #[tokio::test]

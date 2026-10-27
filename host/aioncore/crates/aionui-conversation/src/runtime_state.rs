@@ -30,6 +30,12 @@ struct ConversationRuntimeState {
     /// time. See [`ConversationRuntimeStateService::should_log_once_for_turn`].
     logged_once_per_turn: HashMap<(OncePerTurn, String), String>,
     shutting_down: bool,
+    update_reservation: Option<String>,
+    runtime_builds: usize,
+    runtime_epoch_used: bool,
+    failed_persistence_turns: HashSet<String>,
+    persistence_fail_closed: bool,
+    revoked_update_reservations: HashSet<String>,
 }
 
 /// Events that are worth one log line per turn rather than one per attempt.
@@ -61,6 +67,35 @@ pub enum RuntimeLifecycleState {
     ShuttingDown,
 }
 
+struct RuntimeBuildPermit(Arc<ConversationRuntimeStateService>);
+impl Drop for RuntimeBuildPermit {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.0.state.lock() {
+            state.runtime_builds = state.runtime_builds.saturating_sub(1);
+        }
+        self.0.release_notify.notify_waiters();
+    }
+}
+
+impl aionui_ai_agent::TaskBuildGate for ConversationRuntimeStateService {
+    fn acquire(self: Arc<Self>) -> Result<Box<dyn Send>, aionui_ai_agent::AgentError> {
+        {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| aionui_ai_agent::AgentError::internal("Runtime gate unavailable"))?;
+            if state.shutting_down || state.update_reservation.is_some() {
+                return Err(aionui_ai_agent::AgentError::BadRequest(
+                    "Application update has reserved the runtime".into(),
+                ));
+            }
+            state.runtime_builds += 1;
+            state.runtime_epoch_used = true;
+        }
+        Ok(Box::new(RuntimeBuildPermit(self)))
+    }
+}
+
 impl ConversationRuntimeStateService {
     pub fn try_claim_turn(
         self: &Arc<Self>,
@@ -82,6 +117,12 @@ impl ConversationRuntimeStateService {
             );
             return Err(ConversationError::Busy {
                 reason: "conversation runtime is shutting down".into(),
+            });
+        }
+
+        if state.update_reservation.is_some() {
+            return Err(ConversationError::Busy {
+                reason: "An application update has reserved the runtime".into(),
             });
         }
 
@@ -307,7 +348,7 @@ impl ConversationRuntimeStateService {
             .state
             .lock()
             .map_err(|_| ConversationError::internal("conversation runtime state lock poisoned"))?;
-        if state.shutting_down {
+        if state.shutting_down || state.update_reservation.is_some() {
             return Err(ConversationError::Busy {
                 reason: "conversation runtime is shutting down".into(),
             });
@@ -461,6 +502,71 @@ impl ConversationRuntimeStateService {
         self.state.lock().map(|state| state.shutting_down).unwrap_or(true)
     }
 
+    pub fn mark_turn_persistence_failed(&self, conversation_id: &str) {
+        if let Ok(mut state) = self.state.lock()
+            && let Some(turn_id) = state.active_turns.get(conversation_id).cloned()
+        {
+            if state.failed_persistence_turns.len() < 1024 {
+                state.failed_persistence_turns.insert(turn_id);
+            } else {
+                state.persistence_fail_closed = true;
+            }
+        }
+    }
+
+    pub fn turn_persistence_failed(&self, turn_id: &str) -> bool {
+        self.state
+            .lock()
+            .map(|state| state.persistence_fail_closed || state.failed_persistence_turns.contains(turn_id))
+            .unwrap_or(true)
+    }
+
+    /// Uses the turn-claim mutex, so a new foreground/cron turn cannot race
+    /// an idle update check. Revocations also fence delayed HTTP requests.
+    pub fn reserve_update(&self, reservation: &str) -> Result<(), &'static str> {
+        let mut state = self.state.lock().map_err(|_| "UPDATE_ACTIVE_WORK")?;
+        if state.revoked_update_reservations.contains(reservation) {
+            return Err("UPDATE_RESERVATION_REVOKED");
+        }
+        if state.update_reservation.as_deref() == Some(reservation) {
+            return Ok(());
+        }
+        if state.shutting_down
+            || state.runtime_builds > 0
+            || state.update_reservation.is_some()
+            || !state.active_turns.is_empty()
+            || !state.restarting_conversations.is_empty()
+            || !state.cancelling_conversations.is_empty()
+            || !state.deleting_conversations.is_empty()
+        {
+            return Err("UPDATE_ACTIVE_WORK");
+        }
+        if state.runtime_epoch_used {
+            return Err("UPDATE_OPEN_RUNTIMES");
+        }
+        // Bound tombstones without evicting one that may still fence an HTTP
+        // request. A process restart clears this ephemeral handoff state.
+        if state.revoked_update_reservations.len() >= 256 {
+            return Err("UPDATE_RESERVATION_REVOKED");
+        }
+        state.update_reservation = Some(reservation.to_owned());
+        Ok(())
+    }
+
+    pub fn release_update(&self, reservation: &str) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        if state.revoked_update_reservations.len() < 256 {
+            state.revoked_update_reservations.insert(reservation.to_owned());
+        }
+        if state.update_reservation.as_deref() == Some(reservation) {
+            state.update_reservation = None;
+            self.release_notify.notify_waiters();
+        }
+        true
+    }
+
     pub fn lifecycle_for(&self, conversation_id: &str) -> RuntimeLifecycleState {
         match self.state.lock() {
             Ok(state) => {
@@ -492,7 +598,7 @@ impl ConversationRuntimeStateService {
         pending_confirmations: usize,
         supports_midturn_delivery: bool,
     ) -> ConversationRuntimeSummary {
-        let (active_turn_id, cancelling, restarting) = self
+        let (active_turn_id, cancelling, restarting, update_reserved) = self
             .state
             .lock()
             .map(|state| {
@@ -500,9 +606,10 @@ impl ConversationRuntimeStateService {
                     state.active_turns.get(conversation_id).cloned(),
                     state.cancelling_conversations.contains(conversation_id),
                     state.restarting_conversations.contains(conversation_id),
+                    state.update_reservation.is_some(),
                 )
             })
-            .unwrap_or((None, false, true));
+            .unwrap_or((None, false, true, true));
         let claimed = active_turn_id.is_some();
 
         let state = if restarting {
@@ -523,7 +630,7 @@ impl ConversationRuntimeStateService {
 
         ConversationRuntimeSummary {
             state,
-            can_send_message: !is_processing,
+            can_send_message: !is_processing && !update_reserved,
             has_task,
             task_status,
             is_processing,
@@ -622,6 +729,77 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+
+    #[test]
+    fn update_reservation_blocks_new_turns_and_pending_approval_claims() {
+        let state = Arc::new(ConversationRuntimeStateService::default());
+        let claim = state.try_claim_turn("approval", "turn-1").unwrap();
+        assert_eq!(
+            state
+                .summary_from_parts("approval", Some(ConversationStatus::Running), true, 1, false)
+                .state,
+            ConversationRuntimeStateKind::WaitingConfirmation
+        );
+        assert_eq!(state.reserve_update("update-1"), Err("UPDATE_ACTIVE_WORK"));
+        drop(claim);
+        state.reserve_update("update-1").unwrap();
+        state.reserve_update("update-1").unwrap();
+        assert!(state.begin_restart("user").is_err());
+        assert!(state.try_claim_turn("user", "turn-user").is_err());
+        assert!(state.try_claim_turn("cron", "turn-cron").is_err());
+        assert!(!state.summary_from_parts("user", None, false, 0, false).can_send_message);
+        assert!(state.release_update("different-update"));
+        assert!(state.try_claim_turn("user", "still-blocked").is_err());
+        assert!(state.release_update("update-1"));
+        assert!(state.try_claim_turn("user", "released").is_ok());
+    }
+
+    #[test]
+    fn release_tombstone_fences_a_delayed_quiesce_after_http_timeout() {
+        let state = ConversationRuntimeStateService::default();
+        assert!(state.release_update("lost-request"));
+        assert_eq!(state.reserve_update("lost-request"), Err("UPDATE_RESERVATION_REVOKED"));
+        state.reserve_update("new-request").unwrap();
+        state.release_update("new-request");
+        assert_eq!(state.reserve_update("new-request"), Err("UPDATE_RESERVATION_REVOKED"));
+    }
+
+    #[test]
+    fn task_initialization_and_update_reservation_share_one_admission_gate() {
+        use aionui_ai_agent::TaskBuildGate;
+        let state = Arc::new(ConversationRuntimeStateService::default());
+        let initializing = state.clone().acquire().unwrap();
+        assert_eq!(state.reserve_update("update"), Err("UPDATE_ACTIVE_WORK"));
+        drop(initializing);
+        assert_eq!(state.reserve_update("update"), Err("UPDATE_OPEN_RUNTIMES"));
+        let fresh = Arc::new(ConversationRuntimeStateService::default());
+        fresh.reserve_update("update").unwrap();
+        assert!(fresh.clone().acquire().is_err());
+        fresh.release_update("update");
+        assert!(fresh.clone().acquire().is_ok());
+    }
+
+    #[test]
+    fn update_and_new_turn_compete_under_one_atomic_gate() {
+        for _ in 0..32 {
+            let state = Arc::new(ConversationRuntimeStateService::default());
+            let barrier = Arc::new(std::sync::Barrier::new(2));
+            let update_state = state.clone();
+            let update_barrier = barrier.clone();
+            let update = std::thread::spawn(move || {
+                update_barrier.wait();
+                update_state.reserve_update("update").is_ok()
+            });
+            barrier.wait();
+            let claim = state.try_claim_turn("cron", "turn");
+            let reserved = update.join().unwrap();
+            assert_ne!(
+                reserved,
+                claim.is_ok(),
+                "reservation and turn must not both succeed or both fail"
+            );
+        }
+    }
 
     #[test]
     fn claim_records_active_turn_id_in_summary() {

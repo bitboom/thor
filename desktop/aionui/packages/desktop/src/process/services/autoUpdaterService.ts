@@ -10,7 +10,7 @@ import type { UpdateInfoAndProvider } from 'electron-updater/out/AppUpdater';
 import type { DownloadedUpdateHelper } from 'electron-updater/out/DownloadedUpdateHelper';
 import { findFile } from 'electron-updater/out/providers/Provider';
 import { CancellationError, CancellationToken } from 'builder-util-runtime';
-import type { AutoUpdateReadyResult } from '@/common/update/updateTypes';
+import type { AutoUpdateInstallResult, AutoUpdateReadyResult } from '@/common/update/updateTypes';
 import { app, autoUpdater as nativeAutoUpdater } from 'electron';
 import log from 'electron-log';
 import { EventEmitter } from 'events';
@@ -86,7 +86,10 @@ export interface AutoUpdateStatus {
 
 /** Callback type for broadcasting update status */
 export type StatusBroadcastCallback = (status: AutoUpdateStatus) => void;
-export type BeforeQuitAndInstallCallback = () => void | Promise<void>;
+export type UpdateInstallPreflight =
+  | { ok: true; rollback: () => Promise<void> }
+  | { ok: false; reason: 'active' | 'open' | 'unavailable' };
+export type BeforeQuitAndInstallCallback = () => Promise<UpdateInstallPreflight>;
 
 type AutoUpdaterCacheAccess = {
   updateInfoAndProvider?: UpdateInfoAndProvider | null;
@@ -117,6 +120,8 @@ class AutoUpdaterService extends EventEmitter {
     timer: ReturnType<typeof setTimeout>;
   } | null = null;
   private _downloadedUpdateVersion: string | undefined;
+  private _installInFlight = false;
+  private _handoffUnknown = false;
   /** Stores registered autoUpdater event handlers for cleanup and test access */
   private readonly _autoUpdaterHandlers = new Map<string, (...args: unknown[]) => void>();
   private readonly _nativeAutoUpdaterHandlers = new Map<string, (...args: unknown[]) => void>();
@@ -129,7 +134,9 @@ class AutoUpdaterService extends EventEmitter {
 
     // Disable auto-download for manual control
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = true;
+    // Every install must first reserve the Core idle state; ordinary quit may
+    // not bypass that guard. The verified download remains cached for retry.
+    autoUpdater.autoInstallOnAppQuit = false;
     this.configureDevAutoUpdateDebug();
     const releaseFeedOptions = buildReleaseFeedOptions();
 
@@ -269,6 +276,8 @@ class AutoUpdaterService extends EventEmitter {
     this._allowPrerelease = false;
     this._statusBroadcastCallback = null;
     this._beforeQuitAndInstallCallback = null;
+    this._handoffUnknown = false;
+    this._installInFlight = false;
     this._activeDownloadPromise = null;
     this._activeDownloadCancellationToken = null;
     this._ignoreActiveDownloadEvents = false;
@@ -842,62 +851,94 @@ class AutoUpdaterService extends EventEmitter {
     return { success: true };
   }
 
-  async quitAndInstall(): Promise<void> {
-    await this.waitForNativeInstallReady();
-
-    if (this._beforeQuitAndInstallCallback) {
-      log.info('Running pre-install cleanup before quitAndInstall...');
+  /** Return only what electron-updater can establish, not proof of OS install success. */
+  private async requestInstallHandoff(): Promise<'accepted' | 'not-started' | 'unknown'> {
+    if (process.platform === 'win32') {
+      // BaseUpdater.install uses the same verified downloaded artifact as
+      // quitAndInstall, and returns synchronously whether it accepted a handoff.
+      // A pre-existing handoff, missing API, or exception is not proof of no launch.
+      const updater = autoUpdater as unknown as {
+        quitAndInstallCalled?: boolean;
+        install?: (silent: boolean, forceRunAfter: boolean) => boolean;
+      };
+      if (updater.quitAndInstallCalled !== false || typeof updater.install !== 'function') return 'unknown';
+      let accepted: boolean;
       try {
-        await this._beforeQuitAndInstallCallback();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        log.error('[auto-update] pre-install cleanup failed', {
-          error: message,
-          platform: process.platform,
-          version: this._downloadedUpdateVersion,
-        });
-        if (process.platform === 'darwin') {
-          const { default: i18n } = await import('./i18n');
-          this.broadcastStatus({
-            status: 'error',
-            error: i18n.t('update.errors.prepareInstallFailed'),
-          });
-        }
-        throw error;
+        this.moveCwdOutOfInstallDirForWindowsHandoff();
+        // An explicit update runs silently and relaunches Thor after installation.
+        accepted = updater.install(true, true);
+      } catch {
+        return 'unknown';
       }
+      if (!accepted) return updater.quitAndInstallCalled === false ? 'not-started' : 'unknown';
+      // Mirror BaseUpdater.quitAndInstall: notify Electron, then quit through
+      // Thor's normal cleanup. Keep Core quiesced until it has stopped.
+      setImmediate(() => {
+        try {
+          nativeAutoUpdater.emit('before-quit-for-update');
+        } finally {
+          app.quit();
+        }
+      });
+      return 'accepted';
     }
+    // Native macOS updater exposes only an event, whose absence or error is
+    // ambiguous; never release the reservation based on an uncorrelated event.
+    return new Promise<'accepted' | 'unknown'>((resolve) => {
+      let settled = false;
+      const finish = (accepted: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        nativeAutoUpdater.removeListener('before-quit-for-update', onReady);
+        autoUpdater.removeListener('error', onError);
+        resolve(accepted ? 'accepted' : 'unknown');
+      };
+      const onReady = () => finish(true);
+      const onError = () => finish(false);
+      const timer = setTimeout(() => finish(false), 10000);
+      nativeAutoUpdater.on('before-quit-for-update', onReady);
+      autoUpdater.on('error', onError);
+      try {
+        this.moveCwdOutOfInstallDirForWindowsHandoff();
+        autoUpdater.quitAndInstall(false, true);
+      } catch {
+        finish(false);
+      }
+    });
+  }
 
-    log.info('Quitting and installing update...');
+  async quitAndInstall(): Promise<AutoUpdateInstallResult> {
+    if (this._handoffUnknown) return { status: 'deferred', reason: 'unknown' };
+    if (this._installInFlight) return { status: 'deferred', reason: 'active' };
+    this._installInFlight = true;
     try {
-      this.moveCwdOutOfInstallDirForWindowsHandoff();
-      // The first argument maps to electron-updater's silent installer flag.
-      // User-clicked "install now" should show NSIS progress/completion pages;
-      // autoInstallOnAppQuit remains true for background app-quit installs.
-      autoUpdater.quitAndInstall(false, true);
+      await this.waitForNativeInstallReady();
+      if (!this._beforeQuitAndInstallCallback) return { status: 'deferred', reason: 'unavailable' };
+      let preflight: UpdateInstallPreflight;
+      try {
+        preflight = await this._beforeQuitAndInstallCallback();
+      } catch {
+        return { status: 'deferred', reason: 'unavailable' };
+      }
+      if (!preflight || typeof preflight !== 'object') return { status: 'deferred', reason: 'unavailable' };
+      if (preflight.ok === false) return { status: 'deferred', reason: preflight.reason };
+      const handoff = await this.requestInstallHandoff();
+      if (handoff === 'unknown') {
+        this._handoffUnknown = true;
+        return { status: 'deferred', reason: 'unknown' };
+      }
+      if (handoff === 'not-started') {
+        await preflight.rollback().catch(() => {});
+        return { status: 'deferred', reason: 'unavailable' };
+      }
       recordAutoUpdateQuitAndInstall(this.getAutoUpdateDiagnosticOptions());
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      log.error('[auto-update] quitAndInstall handoff failed', {
-        error: message,
-        platform: process.platform,
-        version: this._downloadedUpdateVersion,
-      });
-      const { default: i18n } = await import('./i18n');
-      const userMessage = i18n.t('update.errors.prepareInstallFailed');
-      this.broadcastStatus({
-        status: 'error',
-        error: userMessage,
-      });
-      throw new Error(userMessage, { cause: error });
+      // Core stays quiesced until normal before-quit cleanup stops it. Never
+      // force-exit before the updater has confirmed the installer handoff.
+      return { status: 'started' };
+    } finally {
+      this._installInFlight = false;
     }
-    // On macOS, autoUpdater.quitAndInstall() closes all windows but the
-    // 'window-all-closed' handler does NOT call app.quit() (standard macOS
-    // behavior + close-to-tray). This leaves the process alive and Squirrel
-    // cannot finish replacing the app bundle. Force-exit after a short delay
-    // to let Squirrel receive the install signal.
-    setTimeout(() => {
-      app.exit(0);
-    }, 1000);
   }
 
   /**

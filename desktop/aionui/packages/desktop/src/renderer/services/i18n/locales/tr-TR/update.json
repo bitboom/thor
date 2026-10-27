@@ -54,6 +54,10 @@
     "prepareInstallTimeout": "Kurulum hazırlığı zaman aşımına uğradı. Lütfen daha sonra tekrar deneyin.",
     "prepareInstallFailed": "Kurulum hazırlığı başarısız oldu. Lütfen daha sonra tekrar deneyin."
   },
+  "installDeferredActive": "Devam eden işleri tamamlayın ve bekleyen onayları yanıtlayın, ardından yeniden deneyin. Güncelleme korunur.",
+  "installDeferredOpen": "Ajan oturumları açık. İşler ve onaylar tamamlandıktan sonra Thor’u yeniden başlatın ve yeni işlere başlamadan güncellemeyi yükleyin. İndirme korunur.",
+  "installDeferredUnavailable": "Thor işlerin tamamlandığını doğrulayamıyor. Bağlantı düzeldiğinde yeniden deneyin. İndirilen güncelleme korunur.",
+  "installDeferredUnknown": "Yükleyicinin başlatıldığı doğrulanamadı. Yeniden denemeden önce Thor’u yeniden başlatın. Güncelleme korunur.",
   "releaseNotesLoading": "Güncelleme ayrıntıları alınıyor...",
   "releaseNotesFailed": "Ayrıntılar alınamadı.",
   "viewRelease": "Sürümü görüntüle",

@@ -31,11 +31,13 @@ vi.mock('electron', () => ({
     getVersion: vi.fn(() => '1.0.0'),
     getPath: vi.fn(() => '/test/path'),
     exit: vi.fn(),
+    quit: vi.fn(),
     isPackaged: true,
   },
   autoUpdater: {
     on: vi.fn(),
     removeListener: vi.fn(),
+    emit: vi.fn(),
   },
 }));
 
@@ -52,6 +54,9 @@ vi.mock('electron-updater', () => ({
     checkForUpdates: vi.fn(),
     downloadUpdate: vi.fn(),
     quitAndInstall: vi.fn(),
+    install: vi.fn(() => true),
+    quitAndInstallCalled: false,
+    autoRunAppAfterInstall: true,
     checkForUpdatesAndNotify: vi.fn(),
   },
 }));
@@ -285,11 +290,17 @@ describe('autoUpdate quitAndInstall lifecycle', () => {
     });
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.useFakeTimers();
     setPlatform('win32');
+    const { autoUpdater: native } = await import('electron');
+    const { autoUpdater } = await import('electron-updater');
+    vi.mocked(autoUpdater.quitAndInstall).mockImplementation(() => {
+      const call = vi.mocked(native.on).mock.calls.findLast((entry) => entry[0] === 'before-quit-for-update');
+      (call?.[1] as (() => void) | undefined)?.();
+    });
   });
 
   afterEach(() => {
@@ -304,17 +315,20 @@ describe('autoUpdate quitAndInstall lifecycle', () => {
     const { autoUpdater } = await import('electron-updater');
 
     autoUpdaterService.resetForTest();
-    autoUpdaterService.setBeforeQuitAndInstall(async () => cleanup.promise);
+    autoUpdaterService.setBeforeQuitAndInstall(async () => {
+      await cleanup.promise;
+      return { ok: true, rollback: async () => {} };
+    });
 
     const installPromise = autoUpdaterService.quitAndInstall();
     await Promise.resolve();
 
-    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    expect((autoUpdater as unknown as { install: () => boolean }).install).not.toHaveBeenCalled();
 
     cleanup.resolve();
     await installPromise;
 
-    expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true);
+    expect((autoUpdater as unknown as { install: () => boolean }).install).toHaveBeenCalledWith(true, true);
   });
 
   it('does not start the installer when the pre-install cleanup fails', async () => {
@@ -327,8 +341,8 @@ describe('autoUpdate quitAndInstall lifecycle', () => {
       throw cleanupError;
     });
 
-    await expect(autoUpdaterService.quitAndInstall()).rejects.toThrow('backend did not stop');
-    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    await expect(autoUpdaterService.quitAndInstall()).resolves.toEqual({ status: 'deferred', reason: 'unavailable' });
+    expect((autoUpdater as unknown as { install: () => boolean }).install).not.toHaveBeenCalled();
   });
 
   it('keeps the IPC request pending until quitAndInstall cleanup completes', async () => {
@@ -336,7 +350,10 @@ describe('autoUpdate quitAndInstall lifecycle', () => {
     const { autoUpdaterService } = await import('@process/services/autoUpdaterService');
 
     autoUpdaterService.resetForTest();
-    autoUpdaterService.setBeforeQuitAndInstall(async () => cleanup.promise);
+    autoUpdaterService.setBeforeQuitAndInstall(async () => {
+      await cleanup.promise;
+      return { ok: true, rollback: async () => {} };
+    });
 
     const handler = await getAutoUpdateQuitAndInstallHandler();
     let handlerSettled = false;
@@ -354,7 +371,7 @@ describe('autoUpdate quitAndInstall lifecycle', () => {
     expect(handlerSettled).toBe(true);
   });
 
-  it('propagates quitAndInstall failures through IPC', async () => {
+  it('returns a retryable deferral through IPC when the guard fails', async () => {
     const cleanupError = new Error('native readiness failed');
     const { autoUpdaterService } = await import('@process/services/autoUpdaterService');
 
@@ -365,6 +382,6 @@ describe('autoUpdate quitAndInstall lifecycle', () => {
 
     const handler = await getAutoUpdateQuitAndInstallHandler();
 
-    await expect(handler()).rejects.toThrow('native readiness failed');
+    await expect(handler()).resolves.toEqual({ status: 'deferred', reason: 'unavailable' });
   });
 });

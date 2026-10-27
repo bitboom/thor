@@ -360,6 +360,26 @@ describe('Thor feedback pending state', () => {
 });
 
 describe('Thor browser feedback fallback', () => {
+  it('does not verify an old report that has no reviewed draft', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'thor-feedback-legacy-'));
+    const id = '12345678-1234-4234-8234-123456789abc';
+    vi.mocked(app.getPath).mockReturnValue(dir);
+    currentWindow = { isDestroyed: () => false, webContents: {} };
+    const frame = {};
+    const event = { sender: { mainFrame: frame }, senderFrame: frame };
+    try {
+      writeFileSync(path.join(dir, 'thor-feedback-pending.json'), JSON.stringify(id));
+      expect(await handlers.get('thor:feedback-verify')!(event, id)).toBeNull();
+      expect(net.fetch).not.toHaveBeenCalled();
+      expect(await handlers.get('thor:feedback-pending')!(event)).toMatchObject({
+        reportId: id,
+        draft: null,
+        state: 'pending',
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
   it('opens only the reviewed draft and verifies the matching public issue before clearing pending state', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'thor-feedback-browser-'));
     const id = '12345678-1234-4234-8234-123456789abc';
@@ -385,7 +405,24 @@ describe('Thor browser feedback fallback', () => {
       vi.mocked(net.fetch).mockResolvedValue({
         ok: true,
         json: async () => [
-          { body: payload.body.replace(/\n/g, '\r\n'), html_url: 'https://github.com/bitboom/thor/issues/42' },
+          { title: 'Altered title', body: payload.body, html_url: 'https://github.com/bitboom/thor/issues/40' },
+          {
+            title: payload.title,
+            body: 'Altered text\n\nThor report ID: ' + id,
+            html_url: 'https://github.com/bitboom/thor/issues/41',
+          },
+        ],
+      } as unknown as Response);
+      expect(await handlers.get('thor:feedback-verify')!(event, id)).toBeNull();
+      expect(await handlers.get('thor:feedback-pending')!(event)).toMatchObject({ reportId: id, state: 'pending' });
+      vi.mocked(net.fetch).mockResolvedValue({
+        ok: true,
+        json: async () => [
+          {
+            title: payload.title,
+            body: payload.body.replace(/\n/g, '\r\n'),
+            html_url: 'https://github.com/bitboom/thor/issues/42',
+          },
         ],
       } as unknown as Response);
       expect(await handlers.get('thor:feedback-verify')!(event, id)).toEqual({

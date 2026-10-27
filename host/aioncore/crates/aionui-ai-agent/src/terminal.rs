@@ -491,19 +491,27 @@ mod tests {
         // (`temp_dir()/aionui-term-cwd-test`) was raced by every parallel test
         // process on the machine, which made this test flaky.
         let dir = tempfile::TempDir::new().unwrap();
+        let nonce = uuid::Uuid::now_v7().simple().to_string();
+        let marker = format!("aionui-cwd-{nonce}.txt");
+        let expected = format!("default-cwd-{nonce}");
+        std::fs::write(dir.path().join(&marker), &expected).unwrap();
         let reg = TerminalRegistry::new("conv-t", Some(dir.path().to_path_buf()));
-        let id = reg.create(params("pwd", &[])).await.unwrap();
-        reg.wait_for_exit(&id).await.unwrap();
-        // `pwd` prints the resolved path (on macOS temp_dir lives under
-        // /var -> /private/var), so compare against the canonicalized full path
-        // rather than only the trailing directory name.
-        let canonical = std::fs::canonicalize(dir.path()).unwrap();
-        let expected = canonical.to_str().unwrap();
-        let snap = wait_for_output_contains(&reg, &id, expected).await;
+        // Read a uniquely named relative file instead of comparing `pwd`
+        // spellings: Git Bash reports MSYS paths on Windows, and macOS may
+        // resolve /var to /private/var. Only the configured cwd contains this
+        // marker, so a missing/incorrect default directory still fails.
+        #[cfg(windows)]
+        let command = format!("type {marker}");
+        #[cfg(unix)]
+        let command = format!("cat {marker}");
+        let id = reg.create(params(&command, &[])).await.unwrap();
+        let exit = reg.wait_for_exit(&id).await.unwrap();
+        assert_eq!(exit.exit_code, Some(0), "relative marker read must succeed");
+        let snap = wait_for_output_contains(&reg, &id, &expected).await;
         assert_eq!(
             snap.output.trim(),
             expected,
-            "pwd should report the default cwd; output: {}",
+            "relative marker read must use the default cwd; output: {}",
             snap.output
         );
     }

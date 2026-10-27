@@ -54,6 +54,10 @@
     "prepareInstallTimeout": "準備安裝逾時，請稍後重試。",
     "prepareInstallFailed": "準備安裝失敗，請稍後重試。"
   },
+  "installDeferredActive": "請完成進行中的工作並處理待核准請求後重試。已下載的更新會保留。",
+  "installDeferredOpen": "代理工作階段仍處於開啟狀態。工作和核准完成後，請重新啟動 Thor 並在開始新工作前安裝更新。已下載的更新會保留。",
+  "installDeferredUnavailable": "無法確認工作是否閒置。請在連線恢復後重試，已下載的更新會保留。",
+  "installDeferredUnknown": "無法確認安裝程式是否已啟動。請重新啟動 Thor 後重試，已下載的更新會保留。",
   "releaseNotesLoading": "正在取得更新內容",
   "releaseNotesFailed": "取得失敗，可",
   "viewRelease": "前往查看",

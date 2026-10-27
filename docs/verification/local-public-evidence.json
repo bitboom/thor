@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-10-27T16:40:00Z",
+  "recordedAt": "2026-10-27T17:38:05.068Z",
   "data": "synthetic-only",
   "installedDesktopVerified": false,
   "realCodexContinuity": {
@@ -27,7 +27,13 @@
     "policy": "thor-readonly-v1",
     "liveHttpPreview": true,
     "deniedHttpRequests": 30,
-    "deniedCases": ["all POST mutation routes with same, different and missing Origin", "foreign or opaque Origin reads", "unexpected routes and query strings", "foreign Host despite inherited allowlist", "WebSocket upgrade"],
+    "deniedCases": [
+      "all POST mutation routes with same, different and missing Origin",
+      "foreign or opaque Origin reads",
+      "unexpected routes and query strings",
+      "foreign Host despite inherited allowlist",
+      "WebSocket upgrade"
+    ],
     "documentHashPreservedAfterHttp": true,
     "authorizedCliEditFlushedAndPersisted": true,
     "syntheticOfficeFilesSchemaValidated": 18,
@@ -41,7 +47,7 @@
     "sourceDetectionJobCompleted": true,
     "windowsBuildExecuted": false,
     "releasePublished": false,
-    "reason": "Workflow permission check only; full source has not yet been seeded."
+    "reason": "Historical scaffold-only run before full source reconstruction."
   },
   "githubSourceAndBuild": {
     "repository": "https://github.com/bitboom/thor",
@@ -49,13 +55,17 @@
     "bootstrapSucceeded": true,
     "reconstructedSourceCommit": "ab419fe7277ff23147583eeca05e06c0b2a39c59",
     "canonicalSourceSha256": "7f262c59c2b95c8a502f8af74cd952775f2cdc595943881d56e2ce6fff7e1d2a",
-    "windowsRunUrl": "https://github.com/bitboom/thor/actions/runs/40540906454",
-    "windowsSourceCommit": "356eff881f8e670bd7091c54591c2cd452c1e08e",
-    "runtimeTestsPassed": 53,
+    "windowsRunUrl": "https://github.com/bitboom/thor/actions/runs/40545798481",
+    "windowsSourceCommit": "235ddc9f19ef536ba40f0b288a56c17cd73da87f",
+    "runtimeTestsPassed": 103,
     "windowsBuildSucceeded": false,
-    "failure": "Core clippy rejected Windows-unused imports/helpers and unreachable platform-specific test statements.",
+    "failure": "The default-cwd test compared Git Bash path spelling with a native Windows path. A unique relative-file assertion replaces that comparison in the next candidate.",
     "releasePublished": false,
-    "diagnosticSourceMustNotBeReleased": true
+    "diagnosticSourceMustNotBeReleased": true,
+    "windowsClippySucceeded": true,
+    "firstRustTestCrate": "aionui-ai-agent",
+    "rustTestsPassedBeforeStop": 974,
+    "rustTestsFailed": 1
   },
   "githubDefectTracking": {
     "issueUrl": "https://github.com/bitboom/thor/issues/1",
@@ -68,5 +78,30 @@
     "No installed-app UI, automatic update, app feedback issue or release-loop acceptance yet.",
     "Native UI helper currently returns codex app-server exited before returning response; Chrome binding returns Debugger unattached.",
     "No company mail, DRM, model or cookie skill was accessed."
-  ]
+  ],
+  "localCandidateVerification": {
+    "baseCommit": "235ddc9f19ef536ba40f0b288a56c17cd73da87f",
+    "scope": "Combined local candidate; MSVC execution and installed acceptance still pending.",
+    "runtimeReleaseTestsPassed": 106,
+    "desktopFullSuite": {
+      "passed": 5014,
+      "skipped": 8,
+      "failed": 0,
+      "passingFiles": 526,
+      "skippedFiles": 1
+    },
+    "laterSilentWindowsUpdateChange": {
+      "focusedTestsPassed": 38,
+      "fullSuiteRepeated": false
+    },
+    "desktopTypecheckPassed": true,
+    "desktopLintErrors": 0,
+    "desktopFormattingPassed": true,
+    "desktopI18nValidationPassed": true,
+    "existingUntranslatedKeyWarnings": 5,
+    "windowsGnuWorkspaceAllTargetsClippyPassed": true,
+    "newRustExecutableTestsRun": false,
+    "candidateCrashHarnessRun": false,
+    "installedDesktopVerified": false
+  }
 }

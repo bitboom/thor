@@ -3691,7 +3691,9 @@ impl ConversationService {
                 conversation_id: conversation_id.to_owned(),
                 msg_id: Some(user_msg_id.clone()),
                 r#type: "text".into(),
-                content: serde_json::json!({ "content": resolved.content }).to_string(),
+                content: serde_json::json!({ "content": resolved.content,
+                    "thor_turn_intent": { "turn_id": active_turn_id, "state": "pending_delivery" } })
+                .to_string(),
                 position: Some("right".into()),
                 status: Some(MIDTURN_STATUS_QUEUED.into()),
                 hidden,
@@ -3956,7 +3958,9 @@ impl ConversationService {
             conversation_id: conversation_id.to_owned(),
             msg_id: Some(user_msg_id.clone()),
             r#type: "text".into(),
-            content: serde_json::json!({ "content": resolved.content }).to_string(),
+            content: serde_json::json!({ "content": resolved.content,
+                "thor_turn_intent": { "turn_id": turn_id, "state": "pending" } })
+            .to_string(),
             position: Some("right".into()),
             status: Some("finish".into()),
             hidden: req.hidden,
@@ -3997,6 +4001,20 @@ impl ConversationService {
                     "created_at": user_msg.created_at,
                 }),
             ));
+        }
+
+        if was_fallback {
+            self.conversation_repo
+                .update_message(
+                    user_id,
+                    conversation_id,
+                    &user_msg_id,
+                    &aionui_db::MessageRowUpdate {
+                        content: Some(user_msg.content.clone()),
+                        ..Default::default()
+                    },
+                )
+                .await?;
         }
 
         // Build task options from conversation row
@@ -4088,7 +4106,9 @@ impl ConversationService {
                 conversation_id: request.conversation_id.clone(),
                 msg_id: Some(user_msg_id),
                 r#type: "text".into(),
-                content: serde_json::json!({ "content": request.content }).to_string(),
+                content: serde_json::json!({ "content": request.content,
+                    "thor_turn_intent": { "turn_id": turn_id, "state": "pending" } })
+                .to_string(),
                 position: Some("right".into()),
                 status: Some("finish".into()),
                 hidden: request.user_message_hidden,

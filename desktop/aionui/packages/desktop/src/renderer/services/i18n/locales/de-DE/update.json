@@ -54,6 +54,10 @@
     "prepareInstallTimeout": "Zeitüberschreitung beim Vorbereiten der Installation. Bitte später erneut versuchen.",
     "prepareInstallFailed": "Vorbereiten der Installation fehlgeschlagen. Bitte später erneut versuchen."
   },
+  "installDeferredActive": "Beenden Sie aktive Arbeiten und beantworten Sie ausstehende Freigaben. Versuchen Sie es dann erneut. Das Update bleibt erhalten.",
+  "installDeferredOpen": "Agent-Sitzungen sind geöffnet. Starten Sie Thor nach Abschluss aller Arbeiten und Freigaben neu und installieren Sie das Update vor neuer Arbeit. Das Update bleibt erhalten.",
+  "installDeferredUnavailable": "Thor kann nicht prüfen, ob alle Arbeiten beendet sind. Versuchen Sie es nach Wiederherstellung der Verbindung erneut. Das Update bleibt erhalten.",
+  "installDeferredUnknown": "Der Start des Installationsprogramms konnte nicht bestätigt werden. Starten Sie Thor vor einem erneuten Versuch neu. Das Update bleibt erhalten.",
   "releaseNotesLoading": "Update-Details werden abgerufen...",
   "releaseNotesFailed": "Update-Details konnten nicht abgerufen werden.",
   "viewRelease": "Release ansehen",

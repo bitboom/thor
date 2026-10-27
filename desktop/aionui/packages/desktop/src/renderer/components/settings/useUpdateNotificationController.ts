@@ -358,13 +358,30 @@ export const useUpdateNotificationController = () => {
       version,
       preparing: true,
     });
-    void ipcBridge.autoUpdate.quitAndInstall.invoke().catch(() => {
-      if (stateRef.current.status !== 'preparing-install') return;
-      dispatch({
-        type: 'autoError',
-        message: t('update.errors.prepareInstallFailed'),
+    void ipcBridge.autoUpdate.quitAndInstall
+      .invoke()
+      .then((result) => {
+        if (result?.status === 'started') return;
+        if (!result || result.status !== 'deferred') throw new Error('Update handoff returned no result.');
+        const key =
+          result.reason === 'active'
+            ? 'update.installDeferredActive'
+            : result.reason === 'open'
+              ? 'update.installDeferredOpen'
+              : result.reason === 'unknown'
+                ? 'update.installDeferredUnknown'
+                : 'update.installDeferredUnavailable';
+        dispatch({ type: 'autoInstallDeferred', message: t(key) });
+        setUpdateReadyState({ ready: true, version, preparing: false });
+      })
+      .catch(() => {
+        if (stateRef.current.status !== 'preparing-install') return;
+        dispatch({
+          type: 'autoInstallDeferred',
+          message: t('update.installDeferredUnavailable'),
+        });
+        setUpdateReadyState({ ready: true, version, preparing: false });
       });
-    });
   }, [dispatch, t]);
 
   const openFile = useCallback(() => {

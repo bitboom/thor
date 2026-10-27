@@ -54,6 +54,10 @@
     "prepareInstallTimeout": "Le délai de préparation de l'installation a expiré. Veuillez réessayer plus tard.",
     "prepareInstallFailed": "La préparation de l'installation a échoué. Veuillez réessayer plus tard."
   },
+  "installDeferredActive": "Terminez les tâches en cours et répondez aux demandes d’approbation avant de réessayer. La mise à jour est conservée.",
+  "installDeferredOpen": "Des sessions d’agent sont ouvertes. Une fois les tâches et approbations terminées, redémarrez Thor et installez la mise à jour avant de commencer une nouvelle tâche. Le téléchargement est conservé.",
+  "installDeferredUnavailable": "Thor ne peut pas vérifier que les tâches sont terminées. Réessayez après le rétablissement de la connexion. La mise à jour est conservée.",
+  "installDeferredUnknown": "Le lancement du programme d’installation n’a pas pu être confirmé. Redémarrez Thor avant de réessayer. La mise à jour est conservée.",
   "releaseNotesLoading": "Récupération des détails de la mise à jour...",
   "releaseNotesFailed": "Échec de la récupération des détails de la mise à jour.",
   "viewRelease": "Voir la version",

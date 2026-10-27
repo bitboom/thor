@@ -54,6 +54,10 @@
     "prepareInstallTimeout": "설치 준비 시간이 초과되었습니다. 나중에 다시 시도하세요.",
     "prepareInstallFailed": "설치 준비에 실패했습니다. 나중에 다시 시도하세요."
   },
+  "installDeferredActive": "진행 중인 작업을 마치고 승인 요청에 응답한 후 다시 시도하세요. 다운로드한 업데이트는 유지됩니다.",
+  "installDeferredOpen": "에이전트 세션이 열려 있습니다. 작업과 승인 요청을 마친 뒤 Thor를 다시 실행하고 새 작업을 시작하기 전에 업데이트를 설치하세요. 다운로드한 업데이트는 유지됩니다.",
+  "installDeferredUnavailable": "작업이 모두 끝났는지 확인할 수 없습니다. 연결이 복구된 후 다시 시도하세요. 다운로드한 업데이트는 유지됩니다.",
+  "installDeferredUnknown": "설치 프로그램 실행 여부를 확인할 수 없습니다. Thor를 다시 시작한 후 시도하세요. 다운로드한 업데이트는 유지됩니다.",
   "releaseNotesLoading": "업데이트 내용을 가져오는 중",
   "releaseNotesFailed": "가져오지 못했습니다.",
   "viewRelease": "릴리스 보기",

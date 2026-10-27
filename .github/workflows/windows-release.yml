@@ -92,6 +92,14 @@ jobs:
       - name: Build and verify isolated Core bundle
         id: core
         run: node release/build-host.mjs
+      - name: Verify Core crash recovery and update reservation
+        timeout-minutes: 10
+        run: >-
+          node agent/tools/verify-recovery.mjs
+          --core "$env:GITHUB_WORKSPACE/.thor-local/release/bundle/aioncore.exe"
+          --bundle "$env:GITHUB_WORKSPACE/.thor-local/release/bundle"
+          --state-root "$env:GITHUB_WORKSPACE/.thor-local/release/recovery-state"
+          --evidence "$env:GITHUB_WORKSPACE/.thor-local/release/recovery-evidence.json"
       - name: Retain verified Core for diagnostics
         if: always() && steps.core.outcome == 'success'
         uses: actions/upload-artifact@v4
@@ -104,6 +112,7 @@ jobs:
             .thor-local/release/bundle/**
             .thor-local/release/bundle-provenance.json
             .thor-local/release/core-local-boundary.json
+            .thor-local/release/recovery-evidence.json
       - name: Desktop quality gates
         working-directory: desktop/aionui
         run: |

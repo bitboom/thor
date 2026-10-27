@@ -98,7 +98,7 @@ describe('UpdateNotificationCard', () => {
     mocks.autoUpdateRestoreDownloadedMock.mockResolvedValue({ success: true, data: { ready: false } });
     mocks.autoUpdateDownloadMock.mockResolvedValue({ success: true });
     mocks.autoUpdateCancelDownloadMock.mockResolvedValue({ success: true });
-    mocks.autoUpdateQuitAndInstallMock.mockResolvedValue(undefined);
+    mocks.autoUpdateQuitAndInstallMock.mockResolvedValue({ status: 'started' });
     mocks.consumeInstallerLastFailureMock.mockResolvedValue({ success: true, data: null });
     mocks.updateCancelDownloadMock.mockResolvedValue({ success: true });
     mocks.updateCheckMock.mockResolvedValue({
@@ -583,6 +583,37 @@ describe('UpdateNotificationCard', () => {
     await act(async () => {
       resolveInstall();
     });
+  });
+
+  it('explains active work and keeps the downloaded update available for retry', async () => {
+    mocks.autoUpdateRestoreDownloadedMock.mockResolvedValue({
+      success: true,
+      data: { ready: true, version: '2.1.14' },
+    });
+    mocks.autoUpdateQuitAndInstallMock.mockResolvedValueOnce({ status: 'deferred', reason: 'active' });
+    render(<UpdateNotificationCard />);
+    fireEvent.click(await screen.findByText('update.restartNow'));
+    expect(await screen.findByText('update.installDeferredActive')).toBeInTheDocument();
+    expect(screen.getByText('update.restartNow')).toBeEnabled();
+    expect(mocks.autoUpdateDownloadMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('update.restartNow'));
+    await waitFor(() => expect(mocks.autoUpdateQuitAndInstallMock).toHaveBeenCalledTimes(2));
+  });
+
+  it.each([
+    ['open', 'update.installDeferredOpen'],
+    ['unknown', 'update.installDeferredUnknown'],
+  ])('shows distinct guidance for %s deferral', async (reason, messageKey) => {
+    mocks.autoUpdateRestoreDownloadedMock.mockResolvedValue({
+      success: true,
+      data: { ready: true, version: '2.1.14' },
+    });
+    mocks.autoUpdateQuitAndInstallMock.mockResolvedValue({ status: 'deferred', reason });
+    render(<UpdateNotificationCard />);
+    fireEvent.click(await screen.findByText('update.restartNow'));
+    expect(await screen.findByText(messageKey)).toBeInTheDocument();
+    expect(screen.getByText('update.restartNow')).toBeEnabled();
+    expect(mocks.autoUpdateDownloadMock).not.toHaveBeenCalled();
   });
 
   it('does not render a close button in the error state', async () => {

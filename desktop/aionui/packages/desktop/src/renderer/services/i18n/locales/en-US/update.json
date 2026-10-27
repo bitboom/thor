@@ -54,6 +54,10 @@
     "prepareInstallTimeout": "Preparing installation timed out. Please try again later.",
     "prepareInstallFailed": "Preparing installation failed. Please try again later."
   },
+  "installDeferredActive": "Finish active work and respond to pending approvals, then try again. The downloaded update is retained.",
+  "installDeferredOpen": "Agent sessions are open. After work and approvals finish, restart Thor and install the update before starting new work. The downloaded update is retained.",
+  "installDeferredUnavailable": "Thor cannot verify that work is idle. Try again when the connection is restored. The update remains downloaded.",
+  "installDeferredUnknown": "Installer handoff could not be confirmed. Restart Thor before trying again; the update remains downloaded.",
   "releaseNotesLoading": "Fetching update details...",
   "releaseNotesFailed": "Failed to fetch update details.",
   "viewRelease": "View release",

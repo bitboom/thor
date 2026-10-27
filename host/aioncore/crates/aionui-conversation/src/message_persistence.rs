@@ -57,6 +57,7 @@ impl ConversationService {
         };
 
         if let Err(store_err) = self.conversation_repo().insert_message(user_id, &row).await {
+            self.runtime_persistence().record_failure(conversation_id);
             warn!(
                 conversation_id,
                 error = %ErrorChain(&store_err),

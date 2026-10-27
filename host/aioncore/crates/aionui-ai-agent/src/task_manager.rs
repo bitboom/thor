@@ -24,6 +24,11 @@ use crate::types::{AIONUI_RUNTIME_TOKEN_ENV, BuildTaskOptions, RuntimeCapabiliti
 pub type AgentFactory =
     Arc<dyn Fn(BuildTaskOptions) -> BoxFuture<'static, Result<AgentInstance, AgentError>> + Send + Sync>;
 
+/// Permit spans creation and handshake, fencing composition-level reservations.
+pub trait TaskBuildGate: Send + Sync {
+    fn acquire(self: Arc<Self>) -> Result<Box<dyn Send>, AgentError>;
+}
+
 /// Manages the lifecycle of active Agent tasks.
 ///
 /// Each conversation has at most one active task (keyed by conversation ID).
@@ -96,6 +101,7 @@ pub struct WorkerTaskManagerImpl {
     factory: AgentFactory,
     active_leases: Arc<ActiveLeaseRegistry>,
     runtime_token_service: Option<Arc<RuntimeTokenService>>,
+    task_build_gate: Option<Arc<dyn TaskBuildGate>>,
 }
 
 impl WorkerTaskManagerImpl {
@@ -109,11 +115,17 @@ impl WorkerTaskManagerImpl {
             factory,
             active_leases,
             runtime_token_service: None,
+            task_build_gate: None,
         }
     }
 
     pub fn with_runtime_token_service(mut self, runtime_token_service: Arc<RuntimeTokenService>) -> Self {
         self.runtime_token_service = Some(runtime_token_service);
+        self
+    }
+
+    pub fn with_task_build_gate(mut self, gate: Arc<dyn TaskBuildGate>) -> Self {
+        self.task_build_gate = Some(gate);
         self
     }
 
@@ -171,6 +183,11 @@ impl IWorkerTaskManager for WorkerTaskManagerImpl {
         conversation_id: &str,
         mut options: BuildTaskOptions,
     ) -> Result<AgentInstance, AgentError> {
+        let _build_permit = self
+            .task_build_gate
+            .as_ref()
+            .map(|gate| gate.clone().acquire())
+            .transpose()?;
         if let Some(existing) = self.initialised_managed_task(conversation_id)
             && !existing.runtime_capabilities.satisfies(&options.runtime_capabilities)
         {
@@ -385,6 +402,31 @@ impl OnConversationDelete for WorkerTaskManagerImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn reserved_build_gate_prevents_factory_initialization() {
+        struct Reserved;
+        impl TaskBuildGate for Reserved {
+            fn acquire(self: Arc<Self>) -> Result<Box<dyn Send>, AgentError> {
+                Err(AgentError::BadRequest("Update reserved".into()))
+            }
+        }
+        let initialized = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = initialized.clone();
+        let manager = WorkerTaskManagerImpl::new(Arc::new(move |_| {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async { Err(AgentError::BadRequest("Synthetic factory".into())) })
+        }))
+        .with_task_build_gate(Arc::new(Reserved));
+        let error = manager
+            .get_or_build_task("update-race", make_options("update-race"))
+            .await
+            .err()
+            .expect("reserved gate must reject before the factory runs");
+        assert!(error.to_string().contains("Update reserved"));
+        assert_eq!(initialized.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(manager.active_count(), 0);
+    }
     use crate::agent_task::{IAgentTask, IMockAgent};
     use crate::protocol::events::AgentStreamEvent;
     use crate::runtime_token::RuntimeTokenError;

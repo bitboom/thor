@@ -124,3 +124,7 @@ export interface AutoUpdateReadyResult {
   filePath?: string;
   size?: number;
 }
+
+export type AutoUpdateInstallResult =
+  | { status: 'started' }
+  | { status: 'deferred'; reason: 'active' | 'open' | 'unavailable' | 'unknown' };

@@ -54,6 +54,10 @@
     "prepareInstallTimeout": "インストールの準備がタイムアウトしました。後でもう一度お試しください。",
     "prepareInstallFailed": "インストールの準備に失敗しました。後でもう一度お試しください。"
   },
+  "installDeferredActive": "実行中の作業を完了し、承認に応答してから再試行してください。更新は保持されます。",
+  "installDeferredOpen": "エージェントのセッションが開いています。作業と承認が完了したらThorを再起動し、新しい作業を始める前に更新をインストールしてください。更新は保持されます。",
+  "installDeferredUnavailable": "作業が完了したことを確認できません。接続が回復してから再試行してください。更新は保持されます。",
+  "installDeferredUnknown": "インストーラーの起動を確認できません。Thorを再起動してから再試行してください。更新は保持されます。",
   "releaseNotesLoading": "更新内容を取得中",
   "releaseNotesFailed": "取得に失敗しました。",
   "viewRelease": "リリースを見る",

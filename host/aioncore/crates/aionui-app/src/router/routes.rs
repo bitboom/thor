@@ -396,6 +396,14 @@ pub fn create_router_with_all_state(services: &AppServices, states: ModuleStates
     );
 
     let router = Router::new()
+        .merge(
+            super::update_quiesce::routes(super::update_quiesce::UpdateQuiesceState {
+                runtime: services.conversation_runtime_state.clone(),
+                tasks: services.worker_task_manager.clone(),
+                local: services.local,
+            })
+            .route_layer(from_fn_with_state(auth_mw_state.clone(), auth_middleware)),
+        )
         .merge(antigravity_hook)
         .route("/health", get(health_check))
         .merge(auth_routes(auth_state))

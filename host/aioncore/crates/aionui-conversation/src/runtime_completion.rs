@@ -65,11 +65,26 @@ impl RuntimeCompletionPublisher {
             }
         }
 
+        if self.persistence.turn_failed(turn_id) {
+            error!(
+                conversation_id,
+                turn_id, "Turn result was not fully saved; retaining pending receipt for recovery"
+            );
+            return;
+        }
         let update = ConversationRowUpdate {
             status: Some("finished".to_owned()),
             updated_at: Some(now_ms()),
             ..Default::default()
         };
+        if let Err(error) = self
+            .repo
+            .settle_turn_intent(&self.user_id, conversation_id, turn_id)
+            .await
+        {
+            error!(error = %ErrorChain(&error), "Could not settle accepted turn receipt");
+            return;
+        }
         if let Err(error) = self.repo.update(&self.user_id, conversation_id, &update).await {
             error!(
                 conversation_id,

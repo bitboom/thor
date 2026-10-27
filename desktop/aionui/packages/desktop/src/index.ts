@@ -37,6 +37,7 @@ import {
 } from './common/config/constants';
 import { initializeProcess } from './process';
 import { startBackendOrExit } from './process/startup/backendStartup';
+import { reserveUpdateInstall } from './process/startup/updateInstallGuard';
 import { assertStartupArchitectureCompatible } from './process/startup/architectureCompatibility';
 import { classifyBackendStartupFailure } from './process/startup/backendStartupFailure';
 import { installQuitCleanup } from './process/startup/quitCleanup';
@@ -629,8 +630,13 @@ const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): v
         // Create status broadcast callback that emits via ipcBridge (pure emitter, no window binding)
         const statusBroadcast = createAutoUpdateStatusBroadcast();
         autoUpdaterService.initialize(statusBroadcast);
-        autoUpdaterService.setBeforeQuitAndInstall(async () => {
-          await backendManager.stop();
+        autoUpdaterService.setBeforeQuitAndInstall(() => {
+          const port = backendManager.port;
+          return reserveUpdateInstall({
+            port,
+            running: backendManager.status === 'running',
+            isCurrent: () => backendManager.status === 'running' && backendManager.port === port,
+          });
         });
         // Check for updates after 3 seconds delay. Skipped in the discontinued
         // build: AionUi's final version guides users to the website instead of

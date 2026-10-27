@@ -19,8 +19,10 @@ for (const component of [bundle.core, bundle.node, bundle.officeCli]) {
 }
 if (treeDigest(path.join(work, 'bundle/managed-resources')) !== bundle.managedResourcesSha256) throw new Error('Managed resources changed after verification.');
 const source = sourceProvenance();
-const staged = stageResources(bundle, source);
+// Electron 42+ installs its binary on first require. Native preparation must
+// materialize and verify that distribution before staging its license files.
 execFileSync(process.execPath, ['release/native-desktop.mjs', 'rebuild'], { cwd: root, stdio: 'inherit' });
+const staged = stageResources(bundle, source);
 execFileSync(process.execPath, ['scripts/build-with-builder.js', 'x64', '--win', '--x64'], {
   cwd: path.join(root, 'desktop/aionui'),
   stdio: 'inherit',

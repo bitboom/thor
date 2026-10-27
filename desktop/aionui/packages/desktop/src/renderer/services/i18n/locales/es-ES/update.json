@@ -53,6 +53,10 @@
     "prepareInstallTimeout": "Preparing installation timed out. Please try again later.",
     "prepareInstallFailed": "Preparing installation failed. Please try again later."
   },
+  "installDeferredActive": "Termina las tareas activas y responde a las aprobaciones pendientes antes de volver a intentarlo. La actualización se conserva.",
+  "installDeferredOpen": "Hay sesiones de agente abiertas. Cuando terminen las tareas y aprobaciones, reinicia Thor e instala la actualización antes de empezar nuevas tareas. La descarga se conserva.",
+  "installDeferredUnavailable": "Thor no puede comprobar si las tareas han terminado. Inténtalo cuando se restablezca la conexión. La actualización se conserva.",
+  "installDeferredUnknown": "No se pudo confirmar el inicio del instalador. Reinicia Thor antes de volver a intentarlo. La actualización se conserva.",
   "releaseNotesLoading": "Obteniendo detalles de la actualización...",
   "releaseNotesFailed": "Error al obtener detalles de la actualización.",
   "viewRelease": "Ver versión",

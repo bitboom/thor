@@ -270,6 +270,11 @@ pub trait IConversationRepository: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// Settle the accepted user turn's durable receipt, if this backend stores it.
+    async fn settle_turn_intent(&self, _user_id: &str, _conversation_id: &str, _turn_id: &str) -> Result<(), DbError> {
+        Ok(())
+    }
+
     /// Full-text search across messages, joining conversation name.
     async fn search_messages(
         &self,

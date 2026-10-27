@@ -152,6 +152,7 @@ export type UpdateNotificationEvent =
       type: 'autoPreparingInstall';
       version?: string;
     }
+  | { type: 'autoInstallDeferred'; message: string }
   | {
       type: 'autoError';
       message: string;
@@ -501,6 +502,7 @@ export const updateNotificationReducer = (
           ...state,
           visible: true,
           status: 'preparing-install',
+          errorMsg: '',
           activeTask: null,
           installerLastFailure: undefined,
           autoUpdateInfo: event.version
@@ -509,6 +511,18 @@ export const updateNotificationReducer = (
                 releaseNotes: state.autoUpdateInfo?.releaseNotes,
               }
             : state.autoUpdateInfo,
+          presentation: 'card',
+        },
+        effects: [],
+      };
+    case 'autoInstallDeferred':
+      return {
+        state: {
+          ...state,
+          visible: true,
+          status: 'downloaded',
+          activeTask: null,
+          errorMsg: event.message,
           presentation: 'card',
         },
         effects: [],

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   updateCheckMock: vi.fn(),
   messageInfoMock: vi.fn(),
   messageErrorMock: vi.fn(),
+  messageWarningMock: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -31,7 +32,12 @@ vi.mock('@arco-design/web-react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@arco-design/web-react')>();
   return {
     ...actual,
-    Message: { ...actual.Message, info: mocks.messageInfoMock, error: mocks.messageErrorMock },
+    Message: {
+      ...actual.Message,
+      info: mocks.messageInfoMock,
+      error: mocks.messageErrorMock,
+      warning: mocks.messageWarningMock,
+    },
   };
 });
 
@@ -68,7 +74,7 @@ import { setUpdateReadyState } from '@/renderer/components/settings/updateReadyS
 describe('AboutModalContent update ready state', () => {
   beforeEach(() => {
     vi.stubGlobal('__APP_VERSION__', '2.1.13');
-    mocks.quitAndInstallMock.mockResolvedValue(undefined);
+    mocks.quitAndInstallMock.mockResolvedValue({ status: 'started' });
     mocks.autoUpdateCheckMock.mockResolvedValue({ success: true });
     mocks.updateCheckMock.mockResolvedValue({
       success: true,
@@ -102,6 +108,15 @@ describe('AboutModalContent update ready state', () => {
     fireEvent.click(await screen.findByRole('button', { name: '2.1.14 已就绪, 立即安装' }));
 
     expect(mocks.quitAndInstallMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the downloaded update available when Core cannot verify idle state', async () => {
+    mocks.quitAndInstallMock.mockResolvedValue({ status: 'deferred', reason: 'unavailable' });
+    render(<AboutModalContent />);
+    await act(async () => setUpdateReadyState({ ready: true, version: '2.1.14' }));
+    fireEvent.click(await screen.findByRole('button', { name: '2.1.14 已就绪, 立即安装' }));
+    await waitFor(() => expect(mocks.messageWarningMock).toHaveBeenCalledWith('update.installDeferredUnavailable'));
+    expect(screen.getByRole('button', { name: '2.1.14 已就绪, 立即安装' })).toBeEnabled();
   });
 
   it('shows preparing loading state for ready auto-update install from About', async () => {
