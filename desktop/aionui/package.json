@@ -111,7 +111,7 @@
     "@wecom/aibot-node-sdk": "^1.0.6",
     "@xmldom/xmldom": "^0.8.11",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^12.4.1",
+    "better-sqlite3": "12.11.1",
     "buffer": "^6.0.3",
     "builder-util-runtime": "9.5.1",
     "classnames": "^2.5.1",

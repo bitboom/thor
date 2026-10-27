@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { nativePowerShellCommand } from './native-command-evidence.mjs';
 
 const valueOf = row => typeof row.content === 'string' ? JSON.parse(row.content) : row.content;
 const samePath = (a, b) => typeof a === 'string' && typeof b === 'string' && path.isAbsolute(a) && path.isAbsolute(b)
@@ -70,6 +71,39 @@ export function assertRecall(text, entries, deleted) {
 
 export function metadata(entries) { return entries.map(({ content, ...entry }) => entry); }
 
+// runCoreTurn returns API-ordered rows created after its pre-send ID snapshot.
+// Earlier progress is allowed; an earlier success must never replace a wrong
+// terminal answer, an unsettled receipt or a different turn's output.
+export function terminalAssistantText(turn) {
+  const rows = turn.messages;
+  assert.ok(Array.isArray(rows) && rows.length >= 2);
+  assert.ok(typeof turn.turnId === 'string' && turn.turnId.trim());
+  assert.equal(rows[0].position, 'right');
+  assert.equal(valueOf(rows[0])?.thor_turn_intent?.turn_id, turn.turnId);
+  assert.equal(valueOf(rows[0])?.thor_turn_intent?.state, 'settled');
+  assert.equal(rows.filter(row => row.position === 'right').length, 1);
+  assert.ok(rows.every(row => row.status !== 'error'));
+  const last = rows.at(-1);
+  assert.equal(last.type, 'text'); assert.equal(last.position, 'left'); assert.equal(last.status, 'finish');
+  assert.ok(typeof last.id === 'string' && last.id && last.id !== rows[0].id);
+  assert.ok(typeof last.backend_turn_id === 'string' && last.backend_turn_id);
+  const text = valueOf(last)?.content;
+  assert.ok(typeof text === 'string' && text.trim());
+  return text;
+}
+
+export function recallQuestionBatches(entries) {
+  assert.equal(entries.length, 15, 'Recall questions must cover all fifteen retained facts.');
+  assert.equal(new Set(entries.map(entry => entry.id)).size, entries.length);
+  return [entries.slice(0, 8), entries.slice(8)];
+}
+
+export function assertRecallQuestionCounts(restarts, questions, durableTurns) {
+  assert.ok(Number.isInteger(restarts) && restarts >= 1 && restarts <= 5);
+  assert.equal(questions, restarts * 2, 'Both fresh recall questions must complete at every restart.');
+  assert.equal(durableTurns, 3 + questions, 'Every setup and recall turn must pass closed-Core SQLite verification.');
+}
+
 export function verifyMemoryToolCalls(rows, context, requirements, turnId) {
   assert.ok(typeof turnId === 'string' && turnId.trim());
   assert.ok(rows.every(row => row.status !== 'error'), 'Turn contains a persisted error.');
@@ -83,7 +117,9 @@ export function verifyMemoryToolCalls(rows, context, requirements, turnId) {
     assert.equal(row.id, value.call_id); ids.add(value.call_id);
     const input = value.input ?? value.args;
     if (input?.type !== 'commandExecution' || typeof input.command !== 'string') continue;
-    const calls = invocations(input.command, context);
+    const command = nativePowerShellCommand(input, context.commandShell);
+    if (command === null) continue;
+    const calls = invocations(command, context);
     if (!calls.length || typeof value.output !== 'string' || value.output.length > 1024 * 1024) continue;
     let outputs;
     try { outputs = value.output.trim().split(/\r?\n/).filter(Boolean).map(JSON.parse); } catch { continue; }

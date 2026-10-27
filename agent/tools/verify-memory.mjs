@@ -12,11 +12,12 @@ import path from 'node:path';
 import { ProjectMemory } from '../memory-store.mjs';
 import { createLocalCoreClient } from '../adapters/aioncore.mjs';
 import { runCoreTurn } from '../client.mjs';
-import { assertEntries, assertRecall, metadata, verifyMemoryToolCalls, memoryDigest, assertMayStart, stopMemoryCore } from './memory-verification.mjs';
+import { assertEntries, assertRecall, metadata, verifyMemoryToolCalls, memoryDigest, assertMayStart, stopMemoryCore, terminalAssistantText, recallQuestionBatches, assertRecallQuestionCounts } from './memory-verification.mjs';
+import { describeCommandShell } from './native-command-evidence.mjs';
 
 const execute = promisify(execFile);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-const usage = 'Usage: node agent/tools/verify-memory.mjs --core ABS_CORE --codex ABS_CODEX --bundle ABS_BUNDLE --repo ABS_REPO --state-root ABS_NEW_DIRECTORY --evidence ABS_NEW_JSON [--restarts 1..5]\n';
+const usage = 'Usage: node agent/tools/verify-memory.mjs --core ABS_CORE --codex ABS_CODEX --bundle ABS_BUNDLE --repo ABS_REPO --state-root ABS_NEW_DIRECTORY --evidence ABS_NEW_JSON [--restarts 1..5] [--command-shell ABS_PWSH_EXE]\nFor native PowerShell display wrappers, explicitly supply the ordinary shell executable, for example --command-shell C:/tools/PowerShell/pwsh.exe. Direct literal commands remain supported without it.\n';
 async function fresh(filename) {
   try { await lstat(filename); throw Error('Acceptance state/evidence must not already exist.'); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -38,6 +39,7 @@ export async function createMemoryAcceptance(options) {
   for (const name of ['core', 'codex', 'bundle', 'repo', 'state-root', 'evidence']) assert.ok(options[name] && path.isAbsolute(options[name]));
   assert.equal(process.platform, 'win32'); assert.match(path.basename(options.codex), /^codex\.exe$/i);
   await fresh(options['state-root']); await fresh(options.evidence);
+  const commandShell = options['command-shell'] === undefined ? undefined : await describeCommandShell(options['command-shell']);
   const managed = await realpath(path.join(options.bundle, 'managed-resources'));
   const manifestBytes = await readFile(path.join(managed, 'manifest.json'));
   const manifest = JSON.parse(manifestBytes); assert.equal(manifest.schemaVersion, 2);
@@ -69,6 +71,7 @@ export async function createMemoryAcceptance(options) {
     source: { coreSha256: hashes.core, requestedCodexSha256: hashes.codex, codexVersion,
       bundledNodeSha256: hashes.node, bundledMemoryCliSha256: hashes.cli, bundledMemoryStoreSha256: hashes.store,
       managedManifestSha256: memoryDigest(manifestBytes), policySourceSha256: hashes.policySource,
+      commandShell: commandShell ? { basename: commandShell.basename, sha256: commandShell.sha256 } : null,
       observedCheckoutCommit: commit, observedCheckoutDirty: dirty, binaryToCheckoutBindingVerified: false },
     async assertOwner() { assert.equal(await readFile(owner, 'utf8'), nonce); },
     async start() {
@@ -103,7 +106,7 @@ export async function createMemoryAcceptance(options) {
       const turn = await runCoreTurn(this.api, { conversationId: id, content: prompt, timeoutMs: 300000 });
       assert.ok(typeof turn.turnId === 'string' && turn.turnId.trim());
       const wanted = await requirements(turn);
-      const context = { node, cli, workspace }; let proof;
+      const context = { node, cli, workspace, commandShell: commandShell?.path }; let proof;
       const deadline = Date.now() + 30000;
       while (Date.now() < deadline) {
         try { proof = verifyMemoryToolCalls(await getRows(), context, wanted, turn.turnId); break; } catch { await pause(100); }
@@ -166,6 +169,7 @@ export async function verifyMemoryAcceptance(options) {
         ...deleted.map(id => operation({ action: 'delete', id }, { deleted: true, id, file: 'THOR_MEMORY.md' }))];
     });
     const stableHash = await memoryFileHash(runner.memoryA);
+    const batches = recallQuestionBatches(retained); let recallQuestions = 0;
     stage = 'separate-project-isolation';
     await runner.turn(runner.workspaceB, `${direct} This is a separate empty synthetic project. List its project-memory metadata only. Reply exactly THOR_EMPTY_PROJECT_MEMORY if empty. Do not read another project or change files.`, async turn => {
       assert.ok(turn.assistantText.includes('THOR_EMPTY_PROJECT_MEMORY')); assert.equal((await runner.memoryB.read()).length, 0);
@@ -176,18 +180,30 @@ export async function verifyMemoryAcceptance(options) {
     for (let restart = 1; restart <= restarts; restart++) {
       stage = `restart-${restart}-recall`; await runner.start();
       assertEntries(await runner.memoryA.read(), retained, deleted); assert.equal(await memoryFileHash(runner.memoryA), stableHash);
-      await runner.turn(runner.workspaceA, `${direct} Read this project's current memory metadata and facts fact-0 through fact-4 and fact-10 through fact-19. Verify fact-5 through fact-9 are absent using the list, without attempting failing reads. Do not change files or use another conversation's transcript. Reply only JSON with exactly {"facts":{ID:exact_current_content,...},"missing":[absent IDs sorted lexically]}.`, async turn => {
-        const entries = await runner.memoryA.read(); assertEntries(entries, retained, deleted); assertRecall(turn.assistantText, entries, deleted);
-        assert.equal(await memoryFileHash(runner.memoryA), stableHash); assert.equal((await runner.memoryB.read()).length, 0);
-        for (const id of deleted) await assert.rejects(runner.memoryA.get(id), { code: 'NOT_FOUND' });
-        return [operation({ action: 'list' }, { file: 'THOR_MEMORY.md', entries: metadata(entries) }),
-          ...entries.map(entry => operation({ action: 'read', id: entry.id }, { entry }))];
-      });
+      const covered = new Set();
+      for (const [index, batch] of batches.entries()) {
+        stage = `restart-${restart}-recall-question-${index + 1}`;
+        await runner.turn(runner.workspaceA, `${direct} Read this project's current memory metadata and exactly these facts ${JSON.stringify(batch.map(entry => entry.id))}. Verify all five deleted IDs ${JSON.stringify(deleted)} are absent using the list, without attempting failing reads. Do not change files or use another conversation's transcript. Reply only JSON with exactly {"facts":{ID:exact_current_content,...},"missing":[absent IDs sorted lexically]}.`, async turn => {
+          const entries = await runner.memoryA.read(); assertEntries(entries, retained, deleted);
+          const answers = batch.map(wanted => entries.find(entry => entry.id === wanted.id));
+          assertRecall(terminalAssistantText(turn), answers, deleted);
+          assert.equal(await memoryFileHash(runner.memoryA), stableHash); assert.equal((await runner.memoryB.read()).length, 0);
+          for (const id of deleted) await assert.rejects(runner.memoryA.get(id), { code: 'NOT_FOUND' });
+          return [operation({ action: 'list' }, { file: 'THOR_MEMORY.md', entries: metadata(entries) }),
+            ...answers.map(entry => operation({ action: 'read', id: entry.id }, { entry }))];
+        });
+        recallQuestions++;
+        for (const entry of batch) covered.add(entry.id);
+      }
+      assert.deepEqual([...covered].sort(), retained.map(entry => entry.id).sort());
       await runner.stop(); await runner.verifyStoppedSqlite();
     }
     assert.ok(runner.cleanupVerified && !runner.child);
+    assertRecallQuestionCounts(restarts, recallQuestions, runner.durableTurns);
     proof.cases.explicit = { passed: true, saved: 20, updated: 5, deleted: 5, restarts,
-      currentValuesRecheckedEachRestart: 15, deletedIdsRecheckedEachRestart: 5, freshConversationEachRecall: true };
+      currentValuesRecheckedEachRestart: 15, deletedIdsRecheckedEachQuestion: 5, freshConversationEachRecall: true,
+      recallQuestionsVerified: recallQuestions, questionsPerRestart: 2, factsPerQuestion: batches.map(batch => batch.length),
+      stableMemoryHashAfterEachQuestion: true, durableNativeTurnsExpected: 3 + restarts * 2 };
     proof.cases.projectIsolation = { passed: true, separateProjectEmpty: true, projectAUnchanged: true,
       scope: 'separate project-file selection and no automatic carryover; not a sandbox isolation guarantee' };
     proof.durableNativeTurnsVerified = runner.durableTurns; proof.ownedProcessTreeStopped = true;
@@ -202,7 +218,7 @@ export async function verifyMemoryAcceptance(options) {
 }
 
 if (process.argv[1] && equal(pathToFileURL(path.resolve(process.argv[1])).href, import.meta.url)) {
-  const { values } = parseArgs({ options: { core: { type: 'string' }, codex: { type: 'string' }, bundle: { type: 'string' }, repo: { type: 'string' }, 'state-root': { type: 'string' }, evidence: { type: 'string' }, restarts: { type: 'string', default: '5' }, help: { type: 'boolean' } }, strict: true });
+  const { values } = parseArgs({ options: { core: { type: 'string' }, codex: { type: 'string' }, bundle: { type: 'string' }, repo: { type: 'string' }, 'state-root': { type: 'string' }, evidence: { type: 'string' }, 'command-shell': { type: 'string' }, restarts: { type: 'string', default: '5' }, help: { type: 'boolean' } }, strict: true });
   if (values.help) process.stdout.write(usage);
   else try { const proof = await verifyMemoryAcceptance(values); process.stdout.write(JSON.stringify(proof) + '\n'); if (!proof.passed) process.exitCode = 1; }
   catch { process.stderr.write(JSON.stringify({ passed: false, inconclusiveAt: 'arguments-or-evidence-write' }) + '\n'); process.exitCode = 1; }

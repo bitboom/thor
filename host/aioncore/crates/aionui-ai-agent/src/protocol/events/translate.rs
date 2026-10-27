@@ -54,7 +54,7 @@ pub(crate) fn session_notification_to_events(notif: &SessionNotification) -> Vec
                     title: Some(tc.title.clone()),
                     kind: Some(map_sdk_tool_kind(&tc.kind)),
                     raw_input: tc.raw_input.clone(),
-                    raw_output: None,
+                    raw_output: sanitize_raw_output(tc.raw_output.clone()),
                     content: map_tool_call_content(&tc.content),
                     locations: map_tool_call_locations(&tc.locations),
                 },
@@ -379,4 +379,69 @@ fn map_tool_call_locations(locations: &[SdkToolCallLocation]) -> Option<Vec<AcpT
             })
             .collect()
     })
+}
+
+#[cfg(test)]
+mod initial_raw_output_tests {
+    use super::*;
+    use agent_client_protocol::schema::v1::ToolCall;
+    use serde_json::json;
+
+    fn translated(call: ToolCall) -> serde_json::Value {
+        let notification = SessionNotification::new("synthetic-session", SessionUpdate::ToolCall(call));
+        let events = session_notification_to_events(&notification);
+        assert_eq!(events.len(), 1);
+        serde_json::to_value(&events[0]).unwrap()
+    }
+
+    #[test]
+    fn initial_tool_call_preserves_partial_output_and_original_arguments() {
+        let input = json!({"operationId": "synthetic-operation", "synthetic": true});
+        let output = json!({"stage": "request_not_confirmed", "operationId": "synthetic-operation"});
+        let wire = translated(
+            ToolCall::new("synthetic-tool", "Synthetic pending write")
+                .status(SdkToolCallStatus::InProgress)
+                .raw_input(input.clone())
+                .raw_output(output.clone()),
+        );
+        assert_eq!(wire["type"], "acp_tool_call");
+        assert_eq!(wire["data"]["update"]["sessionUpdate"], "tool_call");
+        assert_eq!(wire["data"]["update"]["status"], "in_progress");
+        assert_eq!(wire["data"]["update"]["rawInput"], input);
+        assert_eq!(wire["data"]["update"]["rawOutput"], output);
+    }
+
+    #[test]
+    fn initial_tool_call_without_output_keeps_field_absent() {
+        let wire =
+            translated(ToolCall::new("synthetic-tool", "Synthetic pending read").status(SdkToolCallStatus::Pending));
+        assert!(wire["data"]["update"].get("rawOutput").is_none());
+        assert_eq!(wire["data"]["update"]["status"], "pending");
+    }
+
+    #[test]
+    fn initial_tool_call_sanitizes_oversized_inline_images_without_faking_completion() {
+        for saved_path in [None, Some("synthetic/image.png")] {
+            let mut output = json!({"result": format!("data:image/png;base64,{}", "A".repeat(128 * 1024))});
+            if let Some(file) = saved_path {
+                output["saved_path"] = json!(file);
+            }
+            let wire = translated(
+                ToolCall::new("synthetic-image", "Synthetic pending image")
+                    .status(SdkToolCallStatus::InProgress)
+                    .raw_output(output),
+            );
+            let saved = &wire["data"]["update"]["rawOutput"];
+            assert!(saved.get("result").is_none());
+            assert_eq!(saved["result_omitted"], true);
+            assert_eq!(saved["result_omitted_reason"], "image_base64");
+            assert!(saved["result_bytes"].as_u64().unwrap() > 64 * 1024);
+            assert_eq!(wire["data"]["update"]["status"], "in_progress");
+            if let Some(file) = saved_path {
+                assert_eq!(saved["image"]["path"], file);
+            } else {
+                assert!(saved.get("image").is_none());
+            }
+        }
+    }
 }

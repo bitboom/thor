@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-10-27T21:55:32Z",
+  "recordedAt": "2026-10-27T23:33:50.033Z",
   "data": "synthetic-only",
   "installedDesktopVerified": false,
   "managedTreeRepairVerification": {
@@ -74,11 +74,11 @@
     "bootstrapSucceeded": true,
     "reconstructedSourceCommit": "ab419fe7277ff23147583eeca05e06c0b2a39c59",
     "canonicalSourceSha256": "7f262c59c2b95c8a502f8af74cd952775f2cdc595943881d56e2ce6fff7e1d2a",
-    "windowsRunUrl": "https://github.com/bitboom/thor/actions/runs/40578830815",
-    "windowsSourceCommit": "cc72a507802a314fc684c240b1f5267ccb877653",
-    "runtimeTestsPassed": 134,
+    "windowsRunUrl": "https://github.com/bitboom/thor/actions/runs/40591128544",
+    "windowsSourceCommit": "d2d232c98e7031f965ce952230edef2a7525648d",
+    "runtimeTestsPassed": 138,
     "windowsBuildSucceeded": false,
-    "failure": "All Core tests and release compilation succeeded. Bundle assembly then rejected contained scoped npm paths containing @ while computing the pinned managed Node tree digest. No diagnostic artifact or installer was produced.",
+    "failure": "Core workspace, explicit local-channel and desktop gates passed. Forced source compilation of better-sqlite3 12.8.0 against Electron 43.8.3 failed on V8 API incompatibilities; no native proof or installer was produced.",
     "releasePublished": false,
     "diagnosticSourceMustNotBeReleased": true,
     "windowsClippySucceeded": true,
@@ -91,12 +91,12 @@
     "fullRustWorkspaceSucceeded": true,
     "localChannelExplicitRegressionRerunsPassed": 7,
     "msvcReleaseBinaryCompiled": true,
-    "bundleAssemblySucceeded": false,
-    "diagnosticArtifactProduced": false,
+    "bundleAssemblySucceeded": true,
+    "diagnosticArtifactProduced": true,
     "coreLocalBoundary": {
       "passedInCi": true,
       "policy": "thor-local-capability-v1",
-      "coreSha256": "13eb6b043e8c51f845f0fad8b398172cf5105109b7d58b9a9955ac8b0ab2b268",
+      "coreSha256": "3af051528af63c18e28caf824c402a8cfda7f9872ab1e3d394d8ff7fd95e238d",
       "deniedHttpRequests": 23,
       "deniedWebSocketRequests": 9
     },
@@ -107,7 +107,19 @@
       "originalUnchangedAfterHttp": true,
       "authorizedCliEdit": true,
       "browserCsrfTested": false
-    }
+    },
+    "diagnosticArtifactId": 12776805115,
+    "desktopTestsPassed": 5027,
+    "desktopTestsSkipped": 6,
+    "desktopTestsFailed": 0,
+    "desktopFilesPassed": 526,
+    "desktopFilesSkipped": 1,
+    "nativeProofPassed": false,
+    "installerProduced": false,
+    "releaseBlockers": [
+      "Initial ACP raw_output loss in issue #6 remains in this diagnostic Core.",
+      "Native SQLite source compilation and packaged proof did not pass."
+    ]
   },
   "githubDefectTracking": {
     "issueUrl": "https://github.com/bitboom/thor/issues/1",
@@ -125,13 +137,29 @@
     "managedOfficeIssue": {
       "issueUrl": "https://github.com/bitboom/thor/issues/3",
       "actualIssueCreatedAndReadBack": true,
-      "sourceReviewFixOnly": true,
-      "candidateModelExecutionVerified": false
+      "sourceReviewFixOnly": false,
+      "candidateModelExecutionVerified": true,
+      "nativeCandidateCommandsObserved": true,
+      "fullNineDocumentAcceptance": "POSTRUN_COMPONENT_PASS; overall installed P08 remains INCONCLUSIVE",
+      "installedDesktopVerified": false
     },
     "feedbackCredentialIssue": {
       "issueUrl": "https://github.com/bitboom/thor/issues/4",
       "actualIssueCreatedAndReadBack": true,
       "syntheticInputsOnly": true,
+      "installedAppFeedbackUiTested": false
+    },
+    "initialAcpOutputIssue": {
+      "issueUrl": "https://github.com/bitboom/thor/issues/6",
+      "actualIssueCreatedAndReadBack": true,
+      "actualWireToPersistedLossObserved": true,
+      "counterWritesBeforeFailure": 0,
+      "sourceFixAppliedLocally": true,
+      "productionLinesChanged": 1,
+      "newRustRegressions": 3,
+      "newRustRegressionsCompiled": true,
+      "newRustRegressionsExecuted": false,
+      "fixedCoreP11Retested": false,
       "installedAppFeedbackUiTested": false
     }
   },
@@ -196,6 +224,504 @@
     "runtimeReleaseSourceCommit": null,
     "desktopSourceCommit": null,
     "fullRustWorkspaceSucceeded": false,
+    "checksAgainstUncommittedChanges": true
+  },
+  "githubWindowsAttemptHistory": [
+    {
+      "repository": "https://github.com/bitboom/thor",
+      "bootstrapRunUrl": "https://github.com/bitboom/thor/actions/runs/40539153033",
+      "bootstrapSucceeded": true,
+      "reconstructedSourceCommit": "ab419fe7277ff23147583eeca05e06c0b2a39c59",
+      "canonicalSourceSha256": "7f262c59c2b95c8a502f8af74cd952775f2cdc595943881d56e2ce6fff7e1d2a",
+      "windowsRunUrl": "https://github.com/bitboom/thor/actions/runs/40578830815",
+      "windowsSourceCommit": "cc72a507802a314fc684c240b1f5267ccb877653",
+      "runtimeTestsPassed": 134,
+      "windowsBuildSucceeded": false,
+      "failure": "All Core tests and release compilation succeeded. Bundle assembly then rejected contained scoped npm paths containing @ while computing the pinned managed Node tree digest. No diagnostic artifact or installer was produced.",
+      "releasePublished": false,
+      "diagnosticSourceMustNotBeReleased": true,
+      "windowsClippySucceeded": true,
+      "rustTestsFailed": 0,
+      "rustTestsPassed": 9344,
+      "rustTestsIgnored": 53,
+      "rustFailureTargets": 0,
+      "rustResultGroups": 251,
+      "completeWorkspaceAttempted": true,
+      "fullRustWorkspaceSucceeded": true,
+      "localChannelExplicitRegressionRerunsPassed": 7,
+      "msvcReleaseBinaryCompiled": true,
+      "bundleAssemblySucceeded": false,
+      "diagnosticArtifactProduced": false,
+      "coreLocalBoundary": {
+        "passedInCi": true,
+        "policy": "thor-local-capability-v1",
+        "coreSha256": "13eb6b043e8c51f845f0fad8b398172cf5105109b7d58b9a9955ac8b0ab2b268",
+        "deniedHttpRequests": 23,
+        "deniedWebSocketRequests": 9
+      },
+      "officeReadonlyInCi": {
+        "passed": true,
+        "executableSha256": "2773251a53f595af0ed061071a28d6bb79cab2ec876bf02cb516cffd254bd6df",
+        "deniedHttpRequests": 30,
+        "originalUnchangedAfterHttp": true,
+        "authorizedCliEdit": true,
+        "browserCsrfTested": false
+      }
+    }
+  ],
+  "ci10CandidateVerification": {
+    "candidate": {
+      "sourceSha": "d2d232c98e7031f965ce952230edef2a7525648d",
+      "runId": 40591128544,
+      "artifactId": 12776805115,
+      "coreSha256": "3af051528af63c18e28caf824c402a8cfda7f9872ab1e3d394d8ff7fd95e238d",
+      "nodeSha256": "b7d912484d42e7a0d0cb5b26a86410ec973a79ece7d61ad535e2d1a97a9026e1",
+      "officeSha256": "2773251a53f595af0ed061071a28d6bb79cab2ec876bf02cb516cffd254bd6df",
+      "diagnosticOnly": true,
+      "wholeWorkflowSuccessClaimed": false,
+      "releaseEligible": false,
+      "installedDesktopVerified": false,
+      "coreWorkspaceStep": "PASS",
+      "explicitLocalChannelRegressions": "PASS",
+      "desktopQualityAndInstaller": "FAILED_NATIVE_REBUILD",
+      "exactFinalTestCountsAvailable": true,
+      "provenanceReceipt": "thor-ci10-core-artifact/bundle-receipt-v2.json",
+      "wholeWorkflowSucceeded": false,
+      "conclusion": "failure",
+      "desktopQuality": "PASS"
+    },
+    "provenanceReceipt": {
+      "version": 2,
+      "archiveDigestVerified": true,
+      "componentBytesVerified": true,
+      "managedResourcesDigestVerified": true,
+      "pinnedRuntimeProvenanceVerified": true,
+      "coreBoundaryVerified": true,
+      "recoveryProofVerified": true,
+      "sha256": "28dace8f990d5f7e9d24ec28107889d6c6a4ff2d34b1dda114964ff49b21f3b0"
+    },
+    "scope": "Downloaded diagnostic Core with isolated synthetic state; component probes do not establish installed acceptance or independently rebuild source.",
+    "components": {
+      "P03CoreAgent": {
+        "status": "PASS",
+        "scope": "Headless candidate Core with real local Codex/model and synthetic mail MCP",
+        "codexVersion": "codex-cli 0.164.0-alpha.11.1",
+        "textFramesBeforeTerminal": 189,
+        "historyAndMcpSelectionAfterRestart": true,
+        "ephemeralCodeRecall": true,
+        "exactRunningTurnCancellationAck": true,
+        "targetPostBoundaryFinishFlags": [
+          true
+        ],
+        "nextTurnNormalFinishPolicy": true,
+        "closedCoreSqliteReadback": true,
+        "ownedProcessTreeStopped": true,
+        "nativeSessionResumeVerified": false,
+        "backendInterruptedOutcomeVerified": false,
+        "actualOsNotificationVerified": false
+      },
+      "P10FiftyCalls": {
+        "status": "PASS",
+        "scope": "50 completed known synthetic mail_read payloads and final marker in a real Codex turn, plus closed-Core persisted readback",
+        "completedCalls": 50,
+        "nonOverlappingCallTimingVerified": false,
+        "restartFaultExercised": false,
+        "cancellationExercised": false,
+        "productStepLimitClaimed": false
+      },
+      "P07CoreOfficePreview": {
+        "status": "PASS",
+        "scope": "Core API and pinned OfficeCLI watcher/CLI in synthetic DOCX/XLSX/PPTX; one document per format",
+        "formats": [
+          "docx",
+          "xlsx",
+          "pptx"
+        ],
+        "deniedHttpRequests": 36,
+        "originalsPreserved": true,
+        "savedCliReadback": true,
+        "refreshSamePort": true,
+        "stopAndParentExitReleasedPorts": true,
+        "missingAndTamperedBundleRejected": true,
+        "embeddedNonReadonlyLockVariantTested": false,
+        "installedDesktop": false,
+        "visualFidelityTested": false,
+        "cleanupCompleted": true
+      },
+      "P04P05AdapterCore": {
+        "status": "PASS",
+        "scope": "Invented ACP adapter and independent headless client on own isolated candidate Core",
+        "startStreaming": true,
+        "approvalAndReconnect": true,
+        "cancelThenFollowingTurn": true,
+        "sessionLoadAfterRuntimeRestart": true,
+        "historyAndProjectMemoryRead": true,
+        "wireMethods": [
+          "initialize",
+          "session/new",
+          "session/prompt",
+          "session/cancel",
+          "session/load"
+        ],
+        "preExistingCodexControlConversations": 0,
+        "nativeCodexControlConversationTested": false,
+        "actualDesktopUiTested": false,
+        "ownedCoreStopped": true,
+        "corePortClosed": true
+      },
+      "P12ExplicitMemory": {
+        "status": "PASS",
+        "scope": "Native Codex invokes bundled project-memory CLI; five fresh-conversation recall cycles after owned Core restarts",
+        "saved": 20,
+        "updated": 5,
+        "deleted": 5,
+        "restarts": 5,
+        "retainedCurrentValuesPerRestart": 15,
+        "deletedIdsPerRestart": 5,
+        "durableNativeTurnsVerified": 8,
+        "projectBEmptyAndAUnchanged": true,
+        "filesystemSandboxIsolationClaimed": false,
+        "closedCoreSqliteReadback": true,
+        "ownedProcessTreeStopped": true,
+        "allTenRecallQuestionsRequirementClaimed": false,
+        "memoryMcpImplemented": false,
+        "backgroundFactExtractorClaimed": false
+      },
+      "P12AutomaticPolicy": {
+        "status": "PASS",
+        "scope": "One stable user preference retained without an explicit remember/CLI instruction, followed by restarted fresh-conversation recall",
+        "nativeBundledSaveAndReadVerified": true,
+        "userOriginAutomaticEntry": true,
+        "otherProjectEmpty": true,
+        "projectMemoryUnchangedOnRecall": true,
+        "durableNativeTurnsVerified": 2,
+        "mechanism": "agent-guided policy plus project CLI/file; no host background fact extractor",
+        "explicitTwentyFactAcceptanceIncluded": false,
+        "closedCoreSqliteReadback": true,
+        "ownedProcessTreeStopped": true
+      },
+      "P08NineDocumentModelEdit": {
+        "status": "INCONCLUSIVE",
+        "acceptancePassed": false,
+        "latestAttempt": "model-05",
+        "scope": "The original harness failed its strict command grammar; a separate hash-bound post-run component verified nine native edits. Overall P08 remains inconclusive; installed UI, visual fidelity, HTML interaction and preview network isolation were not run.",
+        "commandExitCode": 1,
+        "failedGate": "nine completed Office edit grammar",
+        "coreSha256": "3af051528af63c18e28caf824c402a8cfda7f9872ab1e3d394d8ff7fd95e238d",
+        "officeSha256": "2773251a53f595af0ed061071a28d6bb79cab2ec876bf02cb516cffd254bd6df",
+        "originalHashesMatch": true,
+        "finiteFeatureCopiesVerified": 9,
+        "chartBytesChanged": [
+          "01-overview.xlsx",
+          "02-operations.xlsx",
+          "03-summary.xlsx"
+        ],
+        "htmlStaticChecksPassed": true,
+        "normalTargetFinishCount": 4,
+        "normalFinishSuppression": "absent",
+        "finalStreamCheck": "PASS",
+        "cleanup": "PASS",
+        "recordedFailedToolAttemptCount": 2,
+        "bundleRehashPassed": true,
+        "componentSizesAndSha512AlsoMatch": true,
+        "htmlInteraction": "NOT_RUN",
+        "previewNetworkIsolation": "NOT_RUN",
+        "installedUi": "NOT_RUN",
+        "visualFidelity": "NOT_RUN",
+        "modelAcceptanceInferred": false,
+        "priorAttempts": [
+          {
+            "attempt": "model-03",
+            "status": "INCONCLUSIVE",
+            "commandExitCode": 1,
+            "failedGate": "nine completed Office edit grammar",
+            "normalFinishStreamAfterFailure": "NOT_PERSISTED"
+          },
+          {
+            "attempt": "model-04",
+            "status": "INCONCLUSIVE",
+            "commandExitCode": 1,
+            "failedGate": "non-native MCP error",
+            "normalTargetFinishCount": 4,
+            "finalStreamCheck": "PASS",
+            "cleanup": "PASS"
+          }
+        ],
+        "nextAction": "Installed UI, visual fidelity, HTML interaction and preview network isolation remain separate acceptance work.",
+        "postRunComponentVerified": true,
+        "postRunComponentReport": "thor-ci10-office-model05-postrun-component-v2.json",
+        "originalHarnessOutcome": "FAIL",
+        "originalProcessExitCode": 1,
+        "originalReceiptPreserved": true
+      },
+      "P11ExternalSideEffects": {
+        "status": "FAIL",
+        "scope": "Initial partial output is lost before the controlled crash matrix can execute",
+        "issue": "https://github.com/bitboom/thor/issues/6",
+        "initialRawOutputOnWire": true,
+        "persistedRawOutputMissing": true,
+        "counterWritesBeforeFailure": 0,
+        "fullFourBoundaryMatrixPassed": false,
+        "noAutomaticReplayClaimed": false,
+        "exactlyOnceGuaranteeClaimed": false,
+        "fix": {
+          "sourceOnlyPrepared": false,
+          "productionLinesChanged": 1,
+          "newRustRegressions": 3,
+          "testsCompiled": true,
+          "testsExecuted": false,
+          "fixedCoreRetested": false,
+          "appliedLocally": true
+        }
+      },
+      "P11DiagnosticWithWorkaround": {
+        "status": "PASS",
+        "scope": "Separate diagnostic only: a valid subsequent in-progress ToolCallUpdate supplies partial output, leaving initial-output loss unresolved",
+        "initialRawOutputWorkaround": true,
+        "canonicalP11Acceptance": false,
+        "issue6StillReleaseBlocker": true,
+        "commandExitCode": 0,
+        "remoteCounterCounts": {
+          "before": 0,
+          "lost": 1,
+          "returned": 1,
+          "complete": 1
+        },
+        "noAutomaticPromptReplayIn750msWindow": true,
+        "readOnlyExplicitContinuationsPreservedCounts": true,
+        "returnedBeforePersistFaultInjected": true,
+        "completedControlPreserved": true,
+        "ownedProcessTreeStopped": true,
+        "exactlyOnceGuaranteeClaimed": false
+      },
+      "P12PublicTenQuestionExplicitMemory": {
+        "status": "PASS",
+        "scope": "Native Codex invokes bundled project-memory CLI through the revised public verifier; two new recall conversations at each of five owned Core restarts",
+        "saved": 20,
+        "updated": 5,
+        "deleted": 5,
+        "restarts": 5,
+        "recallQuestionsVerified": 10,
+        "factsPerQuestion": [
+          8,
+          7
+        ],
+        "retainedCurrentValuesPerRestart": 15,
+        "deletedIdsRecheckedEachQuestion": 5,
+        "durableNativeTurnsVerified": 13,
+        "stableMemoryHashAfterEachQuestion": true,
+        "projectBEmptyAndAUnchanged": true,
+        "filesystemSandboxIsolationClaimed": false,
+        "closedCoreSqliteReadback": true,
+        "ownedProcessTreeStopped": true,
+        "commandShell": {
+          "basename": "pwsh.exe",
+          "sha256": "362a356ce7f0940ec74f73a8fc2c990a2cc24a38a11c90bbd8eca947110ad139"
+        },
+        "coreSha256": "3af051528af63c18e28caf824c402a8cfda7f9872ab1e3d394d8ff7fd95e238d",
+        "observedCheckoutCommit": "d2d232c98e7031f965ce952230edef2a7525648d",
+        "observedCheckoutDirty": true,
+        "verificationToolWorkingTreeChanged": true,
+        "verifierSha256": {
+          "agent/tools/verify-memory.mjs": "df2d79273775ca5498bf3803e2f62570392d322c37fc49db224cdcf81d2f11d6",
+          "agent/tools/memory-verification.mjs": "9ed7f82a39cb224fb2cd5909987f2c41c51cf9adc7bb595a7db70609f16eeb1d",
+          "agent/tools/native-command-evidence.mjs": "eb83f9253f69c1bdba8f517e4f5805b1d92f0d549ca69b7ff06acb3627bed32b",
+          "agent/client.mjs": "26d60d4623588f28689b3e1e02ef532c1af463ecc8314a9d233efff793100926"
+        },
+        "verifierHashesUnchangedAfterRun": true,
+        "binaryToCheckoutBindingVerified": false,
+        "issue6FixedCoreVerified": false,
+        "independentCommandExitCodeObserved": false,
+        "installedDesktop": false
+      },
+      "P08NineFilePostRunComponent": {
+        "status": "PASS",
+        "scope": "Separately bound read-only replay of the original failed model-05 attempt; not a retrospective harness PASS or complete installed P08 acceptance",
+        "originalHarnessOutcome": "FAIL",
+        "originalProcessExitCode": 1,
+        "originalReceiptPreserved": true,
+        "reportVersion": 2,
+        "reportSha256": "b64e4519b1e9952afa050b15979294b4913fd6a446eb6d18d69632cd2b47e15d",
+        "inputCoreSha256": "3af051528af63c18e28caf824c402a8cfda7f9872ab1e3d394d8ff7fd95e238d",
+        "inputOfficeSha256": "2773251a53f595af0ed061071a28d6bb79cab2ec876bf02cb516cffd254bd6df",
+        "officeLockSha256": "de305e911793f028928797eca0ea931dfb8bc3dd8abb3952b0de3c555606da5b",
+        "binding": {
+          "originalReceiptSha256": "a79c4e8964fc3868615c2a088399c5eca41ed49cb9aabc06aa23181605958ef0",
+          "baselineSha256": "29ced5357866da8c27c3ff8c79df58c8e251eebb885e96ec58598d70696e5d86",
+          "databaseFileSha256": "ffa9538664207a52ac14cb79cf539df1c5d5a9d8b6364092567751e0e42369fb",
+          "logicalRowsSha256": "413b86160ebde9bd025b30da54536286e0d485b0a3f1617b1135c823baff85f0",
+          "postRunValidatorSha256": "82883de7a0bbf1fb095fe9d1a2509d0773cc1fc3a6c8e9acd18237f6b02b558f",
+          "parserSha256": "a13c3a1acf10a98274c4cab07178710d4060d7bc5702dde1b1c0bb60593bb15a",
+          "sharedEvidenceSha256": "b5f3f4526dcdb4355fc6d2f2206509fa2149bc234c7fe4820439ed43ee4b81fc",
+          "checkerSha256": "4c9d900321427776b931c84a860ed430d0ffc49ecb93da7e01d76c90600044f6",
+          "chartCheckerSha256": "1468b0f8ce512ad7ada8d8f5777792b1e0492c5c4797700c85cbaeb03d11ba78",
+          "nativeWrapperSha256": "ea81eb93a0c0abce194ffacf3f472beae81bc0410d5a6eb56853c66d5b314e57",
+          "terminalEvidenceSha256": "5245ebf82d9f3aee25cbb11cf04f654c629cd2b9ae4303d7c02ceaf901bcf5e9",
+          "bundleRehashReceiptSha256": "2deb0a966a813207e0dc2275a20873ca37bf6d9f097d31a53fc8fed687f25e33"
+        },
+        "completedNativeEditFiles": 9,
+        "completionContract": "Core-mapped completed tool rows with exact correlated command and literal file",
+        "independentCommandExitCodeObserved": false,
+        "mailKnownPayloads": true,
+        "failedToolAttemptCount": 2,
+        "normalFinishFramesObserved": 4,
+        "ownedCoreCleanup": "PASS",
+        "originalHashesPreserved": 9,
+        "finiteFileChecks": {
+          "copiesFiniteFeaturesVerified": 9,
+          "chartBytesChanged": [
+            "01-overview.xlsx",
+            "02-operations.xlsx",
+            "03-summary.xlsx"
+          ],
+          "htmlStaticChecksPassed": true,
+          "htmlInteraction": "NOT_RUN",
+          "previewNetworkIsolation": "NOT_RUN"
+        },
+        "nativeOfficeRendering": "NOT_RUN",
+        "installedUi": "NOT_RUN",
+        "visualFidelity": "NOT_RUN"
+      }
+    },
+    "overallAcceptance": {
+      "P02InstalledWindows": "NOT_RUN",
+      "P03InstalledAgent": "NOT_RUN",
+      "P04DesktopAdapterSwap": "NOT_RUN",
+      "P05FullDesktopReplacement": "NOT_RUN",
+      "P07InstalledPreview": "NOT_RUN",
+      "P08NineDocumentModelEdit": "INCONCLUSIVE",
+      "P09InstalledInteractiveHtml": "NOT_RUN",
+      "P10FullFaultMatrix": "NOT_RUN",
+      "P11ExternalSideEffects": "FAIL",
+      "P12CompleteInstalledMemoryAcceptance": "NOT_RUN",
+      "P13ReleaseAssets": "NOT_RUN",
+      "P14InstalledUpdateChain": "NOT_RUN",
+      "P15AppFeedback": "NOT_RUN",
+      "P17InstalledEndToEnd": "NOT_RUN",
+      "P08InstalledOfficeModelUi": "NOT_RUN"
+    },
+    "evidenceSha256": {
+      "thor-ci10-core-artifact/bundle-receipt.json": "58e391286fdb99e16172df6d86b43df8ac0675eb1df0dd5879b0e8dd035ad265",
+      "thor-ci10-p03-b.json": "0b3188fa25b17f91c670de3d2a527fa9c543ace037140345096174d3ec824e91",
+      "thor-ci10-continuity-a.json": "1ef5f5154e3c9b23407b1ff53fa673b154bfe85a015cd48f070b43ca0150fb69",
+      "thor-ci10-office-preview-evidence-01.json": "f0b94383c3c4e7907d79d922e3dcd50fc6c563943ae27efb45bbed897f58fd38",
+      "thor-ci10-memory-b.json": "fac6a2cf15b5f14e2ddfb3eee2d1b23e8c3e44394fbb2aa3cc0a325d771b5b6f",
+      "thor-ci10-automatic-memory-b.json": "0c9965c73753302eb7ab2430457ac7f9d57f3e531fb951da3584cfa5bdee22db",
+      "thor-ci10-adapters-GK9RRv/controller-evidence.json": "8629546813f71655a7e45e2afe0fac9aa0f00b9a05aedf9991d2491b0350cfac",
+      "thor-ci10-p11-toolcapture-a8332eee-89bf-48b5-abdd-859ae5016a18/raw-output-loss-reproduction.json": "4c64fb24429ac58b9649df87204450645ecfaada6573632672f333be57db0cad",
+      "thor-ci10-memory-public10-start.json": "f373ede7263e7622aaad0c4f04c2fc5d44e5db55bc1ca45ebf70b40b7e8fa5d4",
+      "thor-ci10-p11-update-diagnostic-90f6077f-2495-474a-918f-0c3caba18ae5/evidence.json": "9e6dd5e2144ee6a5f8170eaa29637c8216f2be3e0ec56013d86c66c2ef1404e7",
+      "thor-ci10-p11-update-diagnostic-90f6077f-2495-474a-918f-0c3caba18ae5/independent-diagnostic-review.json": "23ad5fc5c3db7e60ea59cfa6dd41bd5311438396eada53e70fdb4df30e971a02",
+      "thor-ci10-memory-public10.json": "45fe482a9923ad0c6373580ccbb542e2f18572d3c70faaf2124b04ba07d26762",
+      "thor-ci10-memory-public10-execution.json": "d5c140f1aa9dbb1d14a169ec69d8ba1e78bc6554bbd663c700d3c634a6b86d73",
+      "thor-ci10-office-model-03/replay-evidence.json": "1a52301fb490ad22000144ebc69d9ab33e0e1853d1c8281d528667f304ac934f",
+      "thor-ci10-office-model-03.log": "4d07fd8f60d77c2415467c73dccac1275d5b09f467a86f28f3e97c9c821f77b4",
+      "thor-ci10-office-model-04/replay-evidence.json": "5747a794d635df8df3bfd8bea75979ada18dac3addb7d5923ba4f304c5902868",
+      "thor-ci10-office-model-04/attempt-receipt.json": "9d17b8d921f3494595599282197f9d9e5818bdf010eef9d9f43c97f7d1ed2b88",
+      "thor-ci10-core-artifact/bundle-receipt-v2.json": "28dace8f990d5f7e9d24ec28107889d6c6a4ff2d34b1dda114964ff49b21f3b0",
+      "thor-ci10-final-receipt.json": "415a4a4e192959860d37c8f37f275e5e0d030364a1a7d3819cce790653f49f55",
+      "thor-ci10-native-errors.log": "ff45d585e81c747dc8e5e90e6ce73b4ce058cf7744105b33ac2dbd61f825e273",
+      "thor-ci10-native-build-tail.log": "b4b000a4f7961169a76773f7684aa01b0e0834af60e2236a95d793274d089e83",
+      "thor-ci10-office-model-05/attempt-receipt.json": "a79c4e8964fc3868615c2a088399c5eca41ed49cb9aabc06aa23181605958ef0",
+      "thor-ci10-office-model-05/replay-evidence.json": "e1520045df3e832829caacd64cae3820f32f613694375ea766c0502af3b1d616",
+      "thor-ci10-office-model-05/bundle-rehash.json": "2deb0a966a813207e0dc2275a20873ca37bf6d9f097d31a53fc8fed687f25e33",
+      "thor-native-sqlite-repair-29333f75-749c-4e07-95ea-f07d95ce584e/source-comparison.json": "d52da30b62301662a619a6305fcd7b71c8822c84a90c5bb10f8b4af0f1dfad69",
+      "thor-native-sqlite-repair-29333f75-749c-4e07-95ea-f07d95ce584e/node-persistence-smoke.json": "083945f37f735b9cfb8bad349f1e4429e9eeafb614189ccc0fe1b0eddec8076c",
+      "thor-native-sqlite-repair-29333f75-749c-4e07-95ea-f07d95ce584e/workflow-comparison.json": "61d26ec4d8467623b46b48636b26fd12b196e390c88e373889696570cc717da5",
+      "thor-ci10-office-model05-postrun-component-v2.json": "b64e4519b1e9952afa050b15979294b4913fd6a446eb6d18d69632cd2b47e15d",
+      "thor-native-sqlite-repair-29333f75-749c-4e07-95ea-f07d95ce584e/node-persistence-smoke.executed.cjs": "62523265d791df385fdaaa8155f41c10f60dc1709432647e2ed9394686d9695a"
+    }
+  },
+  "pendingCandidateSourceVerification": {
+    "issue6": {
+      "productionLinesChanged": 1,
+      "newRustRegressions": 3,
+      "fullGnuWorkspaceAllTargetsClippyPassed": true,
+      "formatPassed": true,
+      "newRustRegressionsExecuted": false,
+      "fixedMsvcCoreP11Retested": false
+    },
+    "sqliteCompatibility": {
+      "dependency": "better-sqlite3",
+      "version": "12.11.1",
+      "exactPin": true,
+      "gitHead": "4cbc39ca582fecb6b51dd920dfdd338ba4b72230",
+      "integrity": "sha512-dq9AtApgg5PGFtBzPFSBl3HZQjHok5gaQCM6zh2Yk0aSmDCs1CbnVI8/HgASQkNKsWFpseIO9beg5xxpYhbIfA==",
+      "archiveSha256": "ebf0ed75a7a59dbcb3b24bbd014ef49d9f15bc328e4adcbf516f2a8fadfa2835",
+      "installedSourceMatchesRegistry": true,
+      "sqliteFrom": "3.51.3",
+      "sqliteTo": "3.53.2",
+      "nodePrebuiltPersistenceSmoke": true,
+      "nodeModulesAbi": "137",
+      "electronVersion": "43.8.3 unchanged",
+      "actualElectronSourceBuildVerified": false,
+      "actualPackagedNativeProofVerified": false,
+      "nodeSmokeScriptSha256": "62523265d791df385fdaaa8155f41c10f60dc1709432647e2ed9394686d9695a",
+      "nodeSmokeScriptPreservedAfterExecution": true,
+      "nodeSmokeScope": "Official Node24/ABI137 prebuilt with isolated explicit nativeBinding; not an Electron source-build proof"
+    },
+    "nativePreflight": {
+      "separateWindowsJob": true,
+      "timeoutMinutes": 20,
+      "existingForcedSourceRebuildEntryPoint": true,
+      "windowsDependsOnNativeSuccess": true,
+      "fullBuildRebuildAndPackagedProofPreserved": true,
+      "sourceReview": "APPROVED"
+    },
+    "cache": {
+      "newSharedKey": "thor-windows-x64-msvc-full-v1-${{ hashFiles('release/build-host.mjs') }}",
+      "cacheOnFailure": false,
+      "performanceBenefitVerified": false,
+      "laterDesktopFailurePreventsCacheSave": true
+    },
+    "validation": {
+      "rootNodePassed": 148,
+      "desktopBootstrapPassed": 35,
+      "typeScriptPassed": true,
+      "packageFormatPassed": true,
+      "diffCheckPassed": true,
+      "newFullMsvcNativeAndInstallerRunRequired": true,
+      "newRustExecutableTestsExecuted": false,
+      "desktopFullSuite": {
+        "firstFullAttempt": {
+          "exitCode": 1,
+          "testsPassed": 5024,
+          "testsFailed": 1,
+          "testsSkipped": 8,
+          "filesPassed": 525,
+          "filesFailed": 1,
+          "filesSkipped": 1,
+          "failure": "mermaidBlockPanZoom.dom.test.tsx:136 missing diagram-zoom-overlay after click"
+        },
+        "singleUnchangedFocusedReplay": {
+          "exitCode": 0,
+          "testsPassed": 7,
+          "testsFailed": 0
+        },
+        "oneAuthorizedUnchangedFullRerun": {
+          "exitCode": 0,
+          "testsPassed": 5025,
+          "testsFailed": 0,
+          "testsSkipped": 8,
+          "filesPassed": 526,
+          "filesFailed": 0,
+          "filesSkipped": 1
+        },
+        "firstFailureUnreproducedOnBoundedRerun": true,
+        "sourceOrTestEditsBetweenRuns": false,
+        "causeIdentified": false,
+        "sqliteCausationClaimed": false,
+        "uiBugFixClaimed": false,
+        "actualElectronMsvcSourceBuildVerified": false,
+        "evidenceSha256": {
+          "thor-native-repair-validation.json": "9e5d456550926b3ebbd0723f0daaf1bf1e0b1f87702c496cbe17aa4ddb3a8b20",
+          "thor-native-repair-desktop-full.log": "e0e275a4aa776c163eac3e5551ef93e16d479a48cd9ef44cbddee9b7e453c5e4",
+          "thor-native-repair-mermaid-focused.log": "317e01a3b36966a7105dae2597dad009bf53aa8320df982fd809825b2c781c59",
+          "thor-native-repair-desktop-full-rerun.log": "32798731399d2eddc40c30a9e00f6130503a55198b1f6fc2f3f6c2abde8bbec0"
+        }
+      }
+    },
+    "baseSourceSha": "d2d232c98e7031f965ce952230edef2a7525648d",
     "checksAgainstUncommittedChanges": true
   }
 }

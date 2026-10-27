@@ -29,8 +29,34 @@ jobs:
             echo 'ready=false' >> "$GITHUB_OUTPUT"
             echo 'Seed checkout: the bootstrap workflow must reconstruct source before Windows builds.'
           fi
-  windows:
+  native:
     needs: source
+    if: needs.source.outputs.ready == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+      - name: Install locked release dependencies
+        run: npm ci --ignore-scripts
+      - name: Install locked desktop dependencies
+        working-directory: desktop/aionui
+        run: bun install --frozen-lockfile
+      - name: Verify Electron native build and persistence
+        run: node release/native-desktop.mjs rebuild
+  windows:
+    needs: [source, native]
     if: needs.source.outputs.ready == 'true'
     runs-on: windows-2022
     timeout-minutes: 120
@@ -63,8 +89,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: host/aioncore -> target
-          shared-key: thor-windows-x64-msvc
-          cache-on-failure: true
+          shared-key: thor-windows-x64-msvc-full-v1-${{ hashFiles('release/build-host.mjs') }}
+          cache-on-failure: false
       - name: Install locked release dependencies
         run: npm ci --ignore-scripts
       - name: Check package, tag and upstream versions

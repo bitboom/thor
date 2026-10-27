@@ -18,6 +18,13 @@ file paths at the API boundary while preserving native absolute paths and Unix
 filenames. Platform-specific test fixtures must retain the original behavioral
 assertions; passing a source check does not establish installed acceptance.
 
+Thor also preserves the initial ACP `ToolCall.raw_output` through the existing
+output sanitizer. The previous translation discarded it before persistence;
+[issue #6](https://github.com/bitboom/thor/issues/6) records the observed loss.
+Three SDK-to-wire regressions cover structured output, absent output and inline
+image sanitization. A compiled candidate must pass the original crash-boundary
+probe; a later update carrying the same output is only a diagnostic workaround.
+
 For an upstream update, use a review branch, fetch the exact desired revision,
 and apply `git subtree pull --prefix=desktop/aionui <upstream URL> <ref> --squash`.
 Do the same separately for `host/aioncore`. Review Thor-specific patches, update
@@ -56,6 +63,15 @@ hook repeats that test with packaged `Thor.exe`, checks the copied native binary
 hash and loads other shipped Node addons before NSIS creates the installer.
 It bypasses the upstream hook's unpinned fallback download. Provenance and the
 current publication controller require this `thor-electron-native-v1` evidence.
+
+`better-sqlite3` is pinned exactly to the published npm release 12.11.1, upstream
+commit `4cbc39ca582fecb6b51dd920dfdd338ba4b72230`. It includes the
+[upstream V8 API correction](https://github.com/WiseLibs/better-sqlite3/pull/1475)
+needed by Electron 43.8.3; the older locked 12.8.0 failed its forced MSVC source
+build. The SQLite engine changes from 3.51.3 to 3.53.2. A separate Windows native
+preflight runs the same locked rebuild and synthetic persistence check before
+the main Windows job. Packaging still rebuilds its own addon and repeats the
+packaged-byte and persistence proofs; it does not reuse preflight outputs.
 
 GitHub Actions runs runtime/release rejection tests, Core formatting, Clippy and
 workspace tests, and the desktop quality gates before packaging Windows x64.
