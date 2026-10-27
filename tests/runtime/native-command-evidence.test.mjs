@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { nativePowerShellCommand, displayQuote, observedSegmentedQuote, describeCommandShell } from '../../agent/tools/native-command-evidence.mjs';
-import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, symlink, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -20,8 +20,10 @@ test('wrapped commands require an explicit expected shell and cannot infer it fr
 test('explicit ordinary shell evidence hashes bytes and reports its basename without executing it', async t => {
   const owned = await mkdtemp(path.join(tmpdir(), 'thor-command-shell-'));
   t.after(() => rm(owned, { recursive: true, force: true }));
-  const file = path.join(owned, 'pwsh.exe'), bytes = Buffer.from('synthetic shell identity, never executed');
-  await writeFile(file, bytes);
+  const created = path.join(owned, 'pwsh.exe'), bytes = Buffer.from('synthetic shell identity, never executed');
+  await writeFile(created, bytes);
+  // tmpdir() can use a Windows 8.3 alias; the positive input must be canonical.
+  const file = await realpath(created);
   const result = await describeCommandShell(file);
   assert.equal(result.basename, 'pwsh.exe');
   assert.equal(result.sha256, createHash('sha256').update(bytes).digest('hex'));

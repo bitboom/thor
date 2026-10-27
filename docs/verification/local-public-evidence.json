@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-10-27T23:33:50.033Z",
+  "recordedAt": "2026-10-27T23:55:22.901Z",
   "data": "synthetic-only",
   "installedDesktopVerified": false,
   "managedTreeRepairVerification": {
@@ -722,6 +722,72 @@
       }
     },
     "baseSourceSha": "d2d232c98e7031f965ce952230edef2a7525648d",
-    "checksAgainstUncommittedChanges": true
+    "checksAgainstUncommittedChanges": true,
+    "scope": "Historical local source-repair checks on d2 before CI11. The later Electron source rebuild and persistence PASS is recorded in ci11NativePreflightAndFixtureFailure; packaged proof and fixed-Core P11 remain pending."
+  },
+  "latestWindowsAttempt": {
+    "sourceSha": "8d686a338934e9aae46f82e87a394cb390ccb9d7",
+    "runId": 40604294379,
+    "conclusion": "failure",
+    "evidenceKey": "ci11NativePreflightAndFixtureFailure"
+  },
+  "ci11NativePreflightAndFixtureFailure": {
+    "schemaVersion": 1,
+    "sourceSha": "8d686a338934e9aae46f82e87a394cb390ccb9d7",
+    "runId": 40604294379,
+    "runUrl": "https://github.com/bitboom/thor/actions/runs/40604294379",
+    "conclusion": "failure",
+    "jobs": {
+      "source": {
+        "id": 122539824781,
+        "conclusion": "success"
+      },
+      "native": {
+        "id": 122539914006,
+        "conclusion": "success"
+      },
+      "windows": {
+        "id": 122541096089,
+        "conclusion": "failure",
+        "failedStep": "Test runtime contracts and release rejection paths"
+      },
+      "publish": {
+        "id": 122542229790,
+        "conclusion": "skipped"
+      }
+    },
+    "nativePreflight": {
+      "passed": true,
+      "forcedMsvcSourceRebuild": true,
+      "package": "better-sqlite3",
+      "version": "12.11.1",
+      "electronVersion": "43.8.3",
+      "modulesAbi": "148",
+      "syntheticDatabaseCloseReopenPassed": true,
+      "packagedThorExeTested": false,
+      "installerProduced": false
+    },
+    "runtimeReleaseTests": {
+      "passed": 147,
+      "failed": 1,
+      "failure": "Positive command-shell fixture supplied a Windows 8.3 temporary-path alias instead of the required canonical path."
+    },
+    "testOnlyRepair": {
+      "file": "tests/runtime/native-command-evidence.test.mjs",
+      "canonicalizeAfterFileCreation": true,
+      "hashAndRewriteAssertionsRetained": true,
+      "productionCanonicalAndLinkChecksUnchanged": true,
+      "productionHelperSha256": "eb83f9253f69c1bdba8f517e4f5805b1d92f0d549ca69b7ff06acb3627bed32b",
+      "localRootNodePassed": 148,
+      "localRootNodeFailed": 0,
+      "ci12Verified": false
+    },
+    "evidenceSha256": {
+      "thor-ci11-native-preflight.log": "489389bb3fcd259b60882ae51a377d8e8f83beacebd6aa27025c30a89736c5ce",
+      "thor-ci11-test-failure.log": "2d8beef75baa7cf2528ea1305ffa8a6538308caf4157badb8a7ef55363aa7632",
+      "thor-ci11-canonical-fixture-node-tests.log": "1b1dda9680ec08b8886cd3d8f8c34c4709e512c516349091c1c641c8324f8c7a",
+      "thor-ci11-canonical-fixture-receipt.json": "63608dc29e79e3244bb17f8de7daa157d78db3c1230dceb7ce467e5f24da20aa"
+    },
+    "releaseEligible": false
   }
 }
