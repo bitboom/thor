@@ -18,6 +18,7 @@ import { spawn } from 'node:child_process';
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
 import { app, net, shell } from 'electron';
 import { collectFeedbackLogAttachment } from '@/process/feedback/logs';
+import { prepareThorFeedback } from '@/common/types/feedbackDiagnostics';
 
 // Table of handlers registered via ipcMain.handle during module import.
 const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
@@ -135,6 +136,34 @@ describe('feedbackBridge — capture-screenshot', () => {
     expect(result).toBeNull();
     expect(consoleError).toHaveBeenCalled();
     consoleError.mockRestore();
+  });
+});
+
+describe('Thor reviewed path redaction', () => {
+  it('rejects an unreviewed network path and accepts only its sanitized draft', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'thor-feedback-path-'));
+    const id = '12345678-1234-4234-8234-123456789abc';
+    const raw = {
+      title: 'file://CANARY_HOST/share',
+      body: '\\\\CANARY_SERVER\\share\\report.docx\n\nThor report ID: ' + id,
+    };
+    const draft = prepareThorFeedback(raw.title, raw.body);
+    vi.mocked(app.getPath).mockReturnValue(dir);
+    vi.mocked(shell.openExternal).mockResolvedValue();
+    currentWindow = { isDestroyed: () => false, webContents: {} };
+    const frame = {};
+    const event = { sender: { mainFrame: frame }, senderFrame: frame };
+    try {
+      const open = handlers.get('thor:feedback-open-browser')!;
+      await expect(open(event, raw)).rejects.toThrow('Review the sanitized feedback');
+      await open(event, draft);
+      const url = new URL(vi.mocked(shell.openExternal).mock.calls.at(-1)![0]);
+      expect(url.searchParams.get('title')).toBe(draft.title);
+      expect(url.searchParams.get('body')).toBe(draft.body);
+      expect(url.toString()).not.toMatch(/CANARY_/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
