@@ -84,20 +84,6 @@ jobs:
         run: |
           cargo clippy --locked --workspace --all-targets -- -D warnings
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Test Core workspace
-        working-directory: host/aioncore
-        run: |
-          cargo test --locked --workspace --no-fail-fast
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Test Core local-channel regressions
-        working-directory: host/aioncore
-        run: |
-          cargo test --locked -p aionui-app --lib local_channel::tests
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo test --locked -p aionui-app --test local_mode
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo test --locked -p aionui-runtime --lib agent_env::tests::desktop_local_capability_is_never_part_of_agent_environment
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Build and verify isolated Core bundle
         id: core
         run: node release/build-host.mjs
@@ -122,6 +108,20 @@ jobs:
             .thor-local/release/bundle-provenance.json
             .thor-local/release/core-local-boundary.json
             .thor-local/release/recovery-evidence.json
+      - name: Test Core workspace
+        working-directory: host/aioncore
+        run: |
+          cargo test --locked --workspace --no-fail-fast
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Test Core local-channel regressions
+        working-directory: host/aioncore
+        run: |
+          cargo test --locked -p aionui-app --lib local_channel::tests
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --locked -p aionui-app --test local_mode
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --locked -p aionui-runtime --lib agent_env::tests::desktop_local_capability_is_never_part_of_agent_environment
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Desktop quality gates
         working-directory: desktop/aionui
         run: |

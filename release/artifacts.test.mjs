@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'js-yaml';
-import { root, readJson, digest, describeFile, validateUpdateManifest, verifyRelease } from './artifact-lib.mjs';
+import { root, readJson, digest, describeFile, safeRelativePath, safeManagedTreePath, treeDigest, validateUpdateManifest, verifyRelease } from './artifact-lib.mjs';
 import { localBoundaryPolicy, requiredLocalBoundaryChecks } from './local-boundary-policy.mjs';
 import { nativeDesktopPolicy, nativeDesktopElectron, nativeDesktopAbi, sqliteNativeFile } from './native-policy.mjs';
 
@@ -13,6 +13,50 @@ const version = '0.1.0';
 const installer = Buffer.from('MZ synthetic installer fixture');
 const file = `Thor-${version}-win-x64.exe`;
 const metadata = () => ({ version, files: [{ url: file, size: installer.length, sha512: digest(installer, 'sha512', 'base64') }], path: file, sha512: digest(installer, 'sha512', 'base64') });
+
+test('managed tree permits pinned scoped npm paths while public artifact paths stay strict', t => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'thor-managed-tree-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const scoped = 'node_modules/npm/node_modules/@isaacs/balanced-match/dist/commonjs/index.js';
+  mkdirSync(path.dirname(path.join(directory, scoped)), { recursive: true });
+  writeFileSync(path.join(directory, scoped), 'synthetic pinned-path fixture');
+  assert.equal(safeManagedTreePath(scoped), true);
+  assert.equal(safeRelativePath(scoped), false);
+  assert.throws(() => describeFile(directory, scoped), /Unsafe artifact path/);
+  const before = treeDigest(directory);
+  assert.equal(treeDigest(directory), before);
+  writeFileSync(path.join(directory, scoped), 'changed scoped npm fixture');
+  assert.notEqual(treeDigest(directory), before, 'Scoped package bytes must be included, never excluded from the digest.');
+});
+
+test('both path policies reject traversal, absolute paths, backslashes and unsupported characters', () => {
+  for (const value of ['', '.', '..', '../escape', 'a/../escape', 'a/./b', 'a//b', '/absolute',
+    'C:/absolute', 'C:\\absolute', '\\\\server\\share', 'a\\b', 'file:stream', 'file\0name', 'name\nfile',
+    'package+extra/index.js', '한글/index.js']) {
+    assert.equal(safeManagedTreePath(value), false, String(value));
+    assert.equal(safeRelativePath(value), false, String(value));
+  }
+});
+
+test('managed tree rejects directory links and Windows junctions and preserves their targets', t => {
+  const owned = mkdtempSync(path.join(tmpdir(), 'thor-managed-links-'));
+  t.after(() => rmSync(owned, { recursive: true, force: true }));
+  const directory = path.join(owned, 'managed'), target = path.join(owned, 'outside');
+  mkdirSync(directory); mkdirSync(target);
+  writeFileSync(path.join(target, 'sentinel.txt'), 'preserve synthetic target');
+  const link = path.join(directory, 'scoped-link');
+  symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+  assert.throws(() => treeDigest(directory), /Symlinks and special files/);
+  assert.throws(() => treeDigest(link), /ordinary directory/);
+  assert.equal(readFileSync(path.join(target, 'sentinel.txt'), 'utf8'), 'preserve synthetic target');
+});
+
+test('managed digest rejects an ordinary file as its root', t => {
+  const owned = mkdtempSync(path.join(tmpdir(), 'thor-managed-root-'));
+  t.after(() => rmSync(owned, { recursive: true, force: true }));
+  const file = path.join(owned, 'not-directory'); writeFileSync(file, 'synthetic');
+  assert.throws(() => treeDigest(file), /ordinary directory/);
+});
 
 test('accepts matching updater bytes and exact release version', () => {
   assert.equal(validateUpdateManifest(metadata(), { version, installer, tag: `v${version}` }), file);

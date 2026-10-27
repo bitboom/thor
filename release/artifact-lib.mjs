@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, lstatSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -24,14 +24,34 @@ export function safeRelativePath(value) {
     !value.startsWith('/') && value.split('/').every(part => part && part !== '.' && part !== '..');
 }
 
+export function safeManagedTreePath(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9_.@\-/]+$/.test(value) &&
+    !value.startsWith('/') && value.split('/').every(part => part && part !== '.' && part !== '..');
+}
+
 export function treeDigest(directory) {
+  const base = path.resolve(directory);
+  const baseInfo = lstatSync(base);
+  if (baseInfo.isSymbolicLink() || !baseInfo.isDirectory()) throw new Error('Managed resource root must be an ordinary directory.');
+  const physicalBase = realpathSync(base);
   const records = [];
   const visit = relative => {
-    for (const entry of readdirSync(path.join(directory, relative), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name, 'en'))) {
+    for (const entry of readdirSync(path.join(base, relative), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name, 'en'))) {
       const file = relative ? `${relative}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) visit(file);
-      else if (entry.isFile()) records.push(describeFile(directory, file));
-      else throw new Error('Symlinks and special files are forbidden in managed release resources.');
+      // The pinned Node distribution includes scoped npm packages. This is a
+      // contained filesystem child, not a public artifact/manifest URL; keep
+      // that stricter policy unchanged and allow only the needed extra '@'.
+      if (!safeManagedTreePath(file)) throw new Error('Unsafe managed resource child path.');
+      const absolute = path.join(base, file);
+      const info = lstatSync(absolute);
+      if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile())) throw new Error('Symlinks and special files are forbidden in managed release resources.');
+      const physicalRelative = path.relative(physicalBase, realpathSync(absolute));
+      if (!physicalRelative || physicalRelative === '..' || physicalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(physicalRelative)) throw new Error('Managed resource child escaped its root.');
+      if (info.isDirectory()) visit(file);
+      else {
+        const bytes = readFileSync(absolute);
+        records.push({ file, size: bytes.length, sha256: digest(bytes), sha512: digest(bytes, 'sha512', 'base64') });
+      }
     }
   };
   visit('');
