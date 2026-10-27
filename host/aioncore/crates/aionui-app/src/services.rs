@@ -371,6 +371,7 @@ impl AppServices {
             backend_binary_path: backend_binary_path.clone(),
             mcp_server_repo: Some(mcp_server_repo),
             session_spawner,
+            managed_office_runtime: Some(Arc::new(crate::agent_office::BundledAgentOffice)),
             // agy cannot prompt for tool permission in headless mode, so AionUi
             // registers itself as its PreToolUse hook; the hook process calls
             // back here to raise the user's permission card.

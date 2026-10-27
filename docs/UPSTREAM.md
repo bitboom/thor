@@ -9,6 +9,14 @@ the modified `host/aioncore` subtree from the checked-out Thor commit using the
 locked Cargo dependencies. An incomplete local Core bundle is a release error.
 No enterprise endpoint, cookie, mail, or credential belongs in these directories.
 
+Thor's local changes cover product/profile identity, the private desktop-to-Core
+channel, task recovery and update reservation, project memory, verified bundled
+OfficeCLI discovery, synthetic MCP setup, feedback review/redaction/readback and
+Windows packaging. The Windows compatibility patch also normalizes relative
+file paths at the API boundary while preserving native absolute paths and Unix
+filenames. Platform-specific test fixtures must retain the original behavioral
+assertions; passing a source check does not establish installed acceptance.
+
 For an upstream update, use a review branch, fetch the exact desired revision,
 and apply `git subtree pull --prefix=desktop/aionui <upstream URL> <ref> --squash`.
 Do the same separately for `host/aioncore`. Review Thor-specific patches, update

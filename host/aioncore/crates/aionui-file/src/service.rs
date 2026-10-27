@@ -124,6 +124,17 @@ impl FileService {
     }
 }
 
+/// Relative paths in the API use forward slashes on every platform. On Unix a
+/// backslash can be part of a filename, so only Windows separators are changed.
+fn wire_relative_path(path: &Path) -> String {
+    let value = path.to_string_lossy();
+    if cfg!(windows) {
+        value.replace('\\', "/")
+    } else {
+        value.into_owned()
+    }
+}
+
 /// Synchronous directory tree builder (runs in blocking thread pool).
 fn build_dir_tree_sync(dir: &Path, root: &Path) -> Result<Vec<DirOrFile>, FileError> {
     let entries = std::fs::read_dir(dir)
@@ -142,7 +153,7 @@ fn build_dir_tree_sync(dir: &Path, root: &Path) -> Result<Vec<DirOrFile>, FileEr
         let name = entry.file_name().to_string_lossy().into_owned();
 
         let full_path = strip_verbatim_prefix(&path.to_string_lossy());
-        let relative_path = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().into_owned();
+        let relative_path = wire_relative_path(path.strip_prefix(root).unwrap_or(&path));
 
         let is_dir = metadata.is_dir();
 
@@ -189,7 +200,7 @@ fn read_children_sync(dir: &Path, root: &Path) -> Result<Vec<DirOrFile>, FileErr
         let name = entry.file_name().to_string_lossy().into_owned();
 
         let full_path = strip_verbatim_prefix(&path.to_string_lossy());
-        let relative_path = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().into_owned();
+        let relative_path = wire_relative_path(path.strip_prefix(root).unwrap_or(&path));
 
         children.push(DirOrFile {
             name,
@@ -246,7 +257,7 @@ fn list_workspace_files_sync(root: &Path) -> Result<Vec<WorkspaceFlatFile>, File
             .unwrap_or_default();
 
         let full_path = strip_verbatim_prefix(&path.to_string_lossy());
-        let relative_path = path.strip_prefix(root).unwrap_or(path).to_string_lossy().into_owned();
+        let relative_path = wire_relative_path(path.strip_prefix(root).unwrap_or(path));
 
         files.push(WorkspaceFlatFile {
             name,
@@ -737,11 +748,11 @@ impl crate::traits::IFileService for FileService {
 
         // Compute relative path from workspace
         let workspace_path = Path::new(workspace);
-        let relative_path = canonical
-            .strip_prefix(std::fs::canonicalize(workspace_path).unwrap_or_else(|_| workspace_path.to_path_buf()))
-            .unwrap_or(&canonical)
-            .to_string_lossy()
-            .into_owned();
+        let relative_path = wire_relative_path(
+            canonical
+                .strip_prefix(std::fs::canonicalize(workspace_path).unwrap_or_else(|_| workspace_path.to_path_buf()))
+                .unwrap_or(&canonical),
+        );
 
         // Build and broadcast contentUpdate event
         let content = String::from_utf8(data.to_vec()).ok();
@@ -1057,6 +1068,16 @@ mod tests {
 
     // The `resolved_*` methods under test are trait methods, not inherent ones.
     use crate::traits::IFileService;
+
+    #[test]
+    fn wire_relative_paths_use_portable_separators_without_changing_unix_filenames() {
+        assert_eq!(
+            wire_relative_path(&Path::new("folder").join("file.txt")),
+            "folder/file.txt"
+        );
+        #[cfg(unix)]
+        assert_eq!(wire_relative_path(Path::new("literal\\name.txt")), "literal\\name.txt");
+    }
 
     #[test]
     fn build_dir_tree_sync_lists_files_and_dirs() {

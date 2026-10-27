@@ -461,10 +461,7 @@ impl ProjectService {
         // named "   " would otherwise surface a whitespace default name, and the
         // scm label fallback (`display_name || default_display_name || pe_id`)
         // would render it blank — breaking the "label is never blank" contract.
-        let default_display_name = canonical::canonicalize(&folder.resource_canonical)
-            .ok()
-            .map(|c| canonical::basename(&c))
-            .filter(|name| !name.trim().is_empty());
+        let default_display_name = folder_default_name(&folder.resource_canonical);
         let (runtime_status, runtime_error) = runtime_status_of(folder);
         FolderDto {
             folder_id: folder.folder_id.clone(),
@@ -475,6 +472,13 @@ impl ProjectService {
             runtime_error,
         }
     }
+}
+
+fn folder_default_name(uri: &str) -> Option<String> {
+    canonical::canonicalize(uri)
+        .ok()
+        .map(|c| canonical::basename(&c))
+        .filter(|name| !name.trim().is_empty())
 }
 
 /// The final path segment of a directory, used as a temp project name.
@@ -500,5 +504,17 @@ fn runtime_status_of(folder: &FolderRow) -> (RuntimeStatus, Option<String>) {
             std::io::ErrorKind::PermissionDenied => (RuntimeStatus::PermissionDenied, None),
             _ => (RuntimeStatus::Missing, Some(err.to_string())),
         },
+    }
+}
+
+#[cfg(test)]
+mod display_name_tests {
+    use super::folder_default_name;
+
+    #[test]
+    fn whitespace_basename_is_never_a_display_name() {
+        let base = if cfg!(windows) { "file:///C:/" } else { "file:///" };
+        assert_eq!(folder_default_name(&format!("{base}%20%20%20")), None);
+        assert_eq!(folder_default_name(&format!("{base}folder")), Some("folder".to_owned()));
     }
 }

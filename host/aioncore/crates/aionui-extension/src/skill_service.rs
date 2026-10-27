@@ -1050,6 +1050,20 @@ async fn replace_existing_path(path: &Path) -> Result<(), ExtensionError> {
         Err(e) => return Err(e.into()),
     };
 
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const DIRECTORY: u32 = 0x10;
+        const REPARSE_POINT: u32 = 0x400;
+        // Directory symlinks and NTFS junctions must be unlinked as entries,
+        // never recursively traversed. This also works for dangling targets;
+        // junction::exists follows its target and reports those as absent.
+        if metadata.file_attributes() & (DIRECTORY | REPARSE_POINT) == DIRECTORY | REPARSE_POINT {
+            tokio::fs::remove_dir(path).await?;
+            return Ok(());
+        }
+    }
+
     if metadata.file_type().is_symlink() || metadata.is_file() {
         tokio::fs::remove_file(path).await?;
     } else {
@@ -1159,14 +1173,7 @@ pub async fn export_skill_with_symlink(skill_path: &Path, target_dir: &Path) -> 
     let target_link = target_dir.join(&skill_name);
     tokio::fs::create_dir_all(target_dir).await?;
 
-    // Remove existing link if present
-    if target_link.exists() {
-        if target_link.is_symlink() || target_link.is_file() {
-            tokio::fs::remove_file(&target_link).await?;
-        } else {
-            tokio::fs::remove_dir_all(&target_link).await?;
-        }
-    }
+    replace_existing_path(&target_link).await?;
 
     create_symlink(skill_path, &target_link).await?;
 
@@ -2733,14 +2740,41 @@ mod tests {
         let outcome = import_skills(&paths, &fresh_source).await.unwrap();
 
         assert_eq!(outcome.imported, vec!["dangling"]);
-        assert!(outcome.failed.is_empty());
+        assert!(
+            outcome.failed.is_empty(),
+            "unexpected import failures: {:?}",
+            outcome.failed
+        );
         assert!(!target.is_symlink());
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            assert_eq!(std::fs::symlink_metadata(&target).unwrap().file_attributes() & 0x400, 0);
+        }
         assert!(target.join(SKILL_MANIFEST_FILE).exists());
         assert!(
             std::fs::read_to_string(target.join(SKILL_MANIFEST_FILE))
                 .unwrap()
                 .contains("Fresh source")
         );
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn replace_existing_path_unlinks_junction_without_touching_live_target() {
+        let tmp = TempDir::new().unwrap();
+        let source = tmp.path().join("live-source");
+        std::fs::create_dir(&source).unwrap();
+        let sentinel = source.join("keep.txt");
+        std::fs::write(&sentinel, "synthetic target content").unwrap();
+        let link = tmp.path().join("managed-link");
+        create_symlink(&source, &link).await.unwrap();
+
+        replace_existing_path(&link).await.unwrap();
+
+        assert!(std::fs::symlink_metadata(&link).is_err());
+        assert_eq!(std::fs::read_to_string(sentinel).unwrap(), "synthetic target content");
+        assert!(source.is_dir());
     }
 
     #[tokio::test]
@@ -3087,6 +3121,49 @@ mod tests {
 
         let link = target_dir.join("my-skill");
         assert!(link.is_symlink());
+    }
+
+    #[tokio::test]
+    async fn export_skill_replaces_existing_link_without_removing_source() {
+        let tmp = TempDir::new().unwrap();
+        let source = tmp.path().join("source").join("exported-skill");
+        std::fs::create_dir_all(&source).unwrap();
+        let sentinel = source.join(SKILL_MANIFEST_FILE);
+        std::fs::write(&sentinel, "synthetic export sentinel").unwrap();
+        let target = tmp.path().join("exports");
+        export_skill_with_symlink(&source, &target).await.unwrap();
+        export_skill_with_symlink(&source, &target).await.unwrap();
+        assert_eq!(std::fs::read_to_string(&sentinel).unwrap(), "synthetic export sentinel");
+        assert_eq!(
+            std::fs::read_to_string(target.join("exported-skill").join(SKILL_MANIFEST_FILE)).unwrap(),
+            "synthetic export sentinel"
+        );
+    }
+
+    #[tokio::test]
+    async fn export_skill_replaces_dangling_link_with_fresh_source() {
+        let tmp = TempDir::new().unwrap();
+        let source = tmp.path().join("fresh").join("exported-skill");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join(SKILL_MANIFEST_FILE), "fresh export sentinel").unwrap();
+        let target = tmp.path().join("exports");
+        std::fs::create_dir(&target).unwrap();
+        let stale = tmp.path().join("stale");
+        std::fs::create_dir(&stale).unwrap();
+        create_symlink(&stale, &target.join("exported-skill")).await.unwrap();
+        std::fs::remove_dir(&stale).unwrap();
+
+        export_skill_with_symlink(&source, &target).await.unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(source.join(SKILL_MANIFEST_FILE)).unwrap(),
+            "fresh export sentinel"
+        );
+        assert_eq!(
+            std::fs::read_to_string(target.join("exported-skill").join(SKILL_MANIFEST_FILE)).unwrap(),
+            "fresh export sentinel"
+        );
+        assert!(!stale.exists());
     }
 
     // -----------------------------------------------------------------------

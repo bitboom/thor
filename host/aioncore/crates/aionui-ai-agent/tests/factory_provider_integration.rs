@@ -92,6 +92,7 @@ fn make_factory(
         backend_binary_path: Arc::new(PathBuf::from("/tmp/aionrs-test/aioncore")),
         mcp_server_repo: None,
         session_spawner,
+        managed_office_runtime: None,
         // No hook bridge in this test: it exercises provider wiring, not the
         // Antigravity permission path.
         antigravity_hook_base_url: None,

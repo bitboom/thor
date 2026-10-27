@@ -23,7 +23,9 @@ async fn local_helpers_require_live_bound_scope_without_desktop_capability() {
     );
     let wrong_scope = services.runtime_token_service.issue(
         "system_default_user",
-        "local-helper",
+        // Issuing another scope for the same conversation revokes its old
+        // token. Keep this negative fixture live without revoking `issue`.
+        "local-helper-wrong-scope",
         TEAM_RUNTIME_TOKEN_SESSION_GENERATION,
         [RuntimeTokenScope::TeamContext],
     );
@@ -55,7 +57,7 @@ async fn local_helpers_require_live_bound_scope_without_desktop_capability() {
         (
             wrong_scope.token.as_str(),
             "system_default_user",
-            "local-helper",
+            "local-helper-wrong-scope",
             None,
             "/api/settings",
             StatusCode::UNAUTHORIZED,
@@ -96,6 +98,23 @@ async fn local_helpers_require_live_bound_scope_without_desktop_capability() {
             expected
         );
     }
+    services
+        .runtime_token_service
+        .invalidate_conversation("system_default_user", "local-helper");
+    let revoked = router
+        .oneshot(
+            Request::builder()
+                .uri("/api/settings")
+                .header("host", "127.0.0.1:32100")
+                .header("x-aionui-runtime-token", &issue.token)
+                .header("x-aionui-user-id", "system_default_user")
+                .header("x-aionui-conversation-id", "local-helper")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(revoked.status(), StatusCode::UNAUTHORIZED);
     services.database.close().await;
 }
 

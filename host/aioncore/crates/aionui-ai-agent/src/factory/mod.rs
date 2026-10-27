@@ -45,6 +45,7 @@ pub struct AgentFactoryDeps {
     /// run through `SessionAgentTask` (direct-CLI) instead of the ACP manager, so
     /// the spawner is unconditionally wired — there is no fallback to the ACP path.
     pub session_spawner: Arc<dyn aionui_process::Spawner>,
+    pub managed_office_runtime: Option<Arc<dyn crate::managed_office_runtime::ManagedOfficeRuntimeResolver>>,
     /// Base URL the Antigravity permission hook calls back on (e.g.
     /// `http://127.0.0.1:25808`). agy cannot prompt for permission in headless
     /// mode, so AionUi registers its own binary as a PreToolUse hook and
@@ -181,7 +182,15 @@ pub(crate) async fn compose_injected_prefix_for(
 }
 
 async fn build_agent(deps: Arc<AgentFactoryDeps>, options: BuildTaskOptions) -> Result<AgentInstance, AgentError> {
-    let context = options.context;
+    let mut context = options.context;
+    if let Some(resolver) = deps.managed_office_runtime.clone() {
+        let capability = tokio::task::spawn_blocking(move || resolver.resolve())
+            .await
+            .unwrap_or(Err(crate::managed_office_runtime::ManagedOfficeUnavailable {
+                code: "OFFICECLI_UNAVAILABLE",
+            }));
+        crate::managed_office_runtime::apply(&mut context, capability);
+    }
     let ctx = FactoryContext::resolve(&context).await?;
     let model = context.model.clone();
     match context.kind {

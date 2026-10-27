@@ -21,9 +21,11 @@ pub(super) fn apply_acp_launch_policy(command_spec: &mut CommandSpec, input: Acp
     );
     append_runtime_env(command_spec, input.runtime_env);
     append_claude_provider_env(command_spec, input.metadata);
+    crate::managed_office_runtime::finalize(&mut command_spec.env, input.runtime_env);
 }
 
 fn append_runtime_env(command_spec: &mut CommandSpec, runtime_env: &[(String, String)]) {
+    crate::managed_office_runtime::remove_shadowed_entries(&mut command_spec.env, runtime_env);
     for (name, value) in runtime_env {
         command_spec.env.push(aionui_common::EnvVar {
             name: name.clone(),
@@ -189,6 +191,80 @@ mod tests {
                 .iter()
                 .any(|entry| entry.name == "AIONUI_CONVERSATION_ID" && entry.value == "conv-1")
         );
+    }
+
+    #[test]
+    fn managed_office_capability_overrides_acp_metadata_case_variants_without_touching_vendor_args() {
+        let metadata = agent_metadata_with_backend(Some("custom"));
+        for (status, path) in [
+            ("verified", "synthetic Office CLI & [approved]"),
+            ("OFFICECLI_BUNDLE_MISSING", ""),
+        ] {
+            let mut command = CommandSpec {
+                command: "synthetic-acp".into(),
+                args: vec!["vendor-argument".into()],
+                env: vec![
+                    aionui_common::EnvVar {
+                        name: "thor_officecli_path".into(),
+                        value: "unverified metadata".into(),
+                    },
+                    aionui_common::EnvVar {
+                        name: "officecli_skip_update".into(),
+                        value: "0".into(),
+                    },
+                ],
+                cwd: None,
+            };
+            apply_acp_launch_policy(
+                &mut command,
+                AcpLaunchPolicyInput {
+                    metadata: &metadata,
+                    config: &Default::default(),
+                    session_snapshot: None,
+                    runtime_env: &[
+                        ("THOR_OFFICECLI_STATUS".into(), status.into()),
+                        ("THOR_OFFICECLI_PATH".into(), path.into()),
+                        ("OFFICECLI_SKIP_UPDATE".into(), "1".into()),
+                    ],
+                },
+            );
+            assert_eq!(command.command, std::path::PathBuf::from("synthetic-acp"));
+            assert_eq!(command.args, ["vendor-argument"]);
+            assert_eq!(
+                command
+                    .env
+                    .iter()
+                    .filter(|entry| entry.name.eq_ignore_ascii_case("THOR_OFFICECLI_PATH"))
+                    .count(),
+                1
+            );
+            assert_eq!(
+                command
+                    .env
+                    .iter()
+                    .find(|entry| entry.name == "THOR_OFFICECLI_PATH")
+                    .unwrap()
+                    .value,
+                path
+            );
+            assert_eq!(
+                command
+                    .env
+                    .iter()
+                    .filter(|entry| entry.name.eq_ignore_ascii_case("OFFICECLI_SKIP_UPDATE"))
+                    .count(),
+                1
+            );
+            assert_eq!(
+                command
+                    .env
+                    .iter()
+                    .find(|entry| entry.name == "OFFICECLI_SKIP_UPDATE")
+                    .unwrap()
+                    .value,
+                "1"
+            );
+        }
     }
 
     #[test]

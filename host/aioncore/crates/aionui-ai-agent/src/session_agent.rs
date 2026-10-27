@@ -2022,6 +2022,8 @@ pub async fn build_session_instance(
         }
     }
 
+    crate::managed_office_runtime::finalize(&mut session_config.spawn_env, runtime_env);
+
     // GAP #6 — codex sandbox + approval policy resolved from the requested mode
     // (clean-slate codex_sandbox_for_mode / codex_approval_for_mode). A full-access
     // / yolo mode escalates the sandbox and drops approval prompts; everything else
@@ -2204,6 +2206,7 @@ fn assemble_spawn_env(
             value: entry.value.clone(),
         })
         .collect();
+    crate::managed_office_runtime::remove_shadowed_entries(&mut env, runtime_env);
     env.extend(runtime_env.iter().map(|(name, value)| aionui_common::EnvVar {
         name: name.clone(),
         value: value.clone(),
@@ -4734,6 +4737,65 @@ mod build_mapping_tests {
             assemble_spawn_env(&[], &[]).is_empty(),
             "empty in = empty out (inherit-only spawn)"
         );
+    }
+
+    #[tokio::test]
+    async fn managed_office_runtime_wins_metadata_and_inherited_case_variants_in_native_spawn() {
+        let path = std::env::temp_dir()
+            .join("Office CLI & [synthetic]")
+            .to_string_lossy()
+            .into_owned();
+        for (status, executable) in [("verified", path.as_str()), ("OFFICECLI_INTEGRITY_FAILED", "")] {
+            let runtime = vec![
+                ("THOR_OFFICECLI_STATUS".into(), status.into()),
+                ("THOR_OFFICECLI_PATH".into(), executable.into()),
+                ("OFFICECLI_SKIP_UPDATE".into(), "1".into()),
+            ];
+            let mut env = assemble_spawn_env(
+                &[aionui_api_types::AgentEnvEntry {
+                    name: "thor_officecli_path".into(),
+                    value: "unverified metadata".into(),
+                    description: None,
+                }],
+                &runtime,
+            );
+            env.extend([
+                aionui_common::EnvVar {
+                    name: "thor_officecli_path".into(),
+                    value: "unverified late provider".into(),
+                },
+                aionui_common::EnvVar {
+                    name: "officecli_skip_update".into(),
+                    value: "0".into(),
+                },
+            ]);
+            crate::managed_office_runtime::finalize(&mut env, &runtime);
+            assert_eq!(
+                env.iter()
+                    .filter(|entry| entry.name.eq_ignore_ascii_case("THOR_OFFICECLI_PATH"))
+                    .count(),
+                1
+            );
+            let mut command = aionui_runtime::Builder::clean_cli(if cfg!(windows) { "powershell.exe" } else { "sh" });
+            command.env("THOR_OFFICECLI_PATH", "unverified inherited");
+            #[cfg(windows)]
+            command.env("thor_officecli_path", "unverified inherited case variant");
+            command.envs(env.iter().map(|entry| (&entry.name, &entry.value)));
+            if cfg!(windows) {
+                command.args(["-NoProfile", "-NonInteractive", "-Command", "[Console]::Write($env:THOR_OFFICECLI_PATH+'|'+$env:THOR_OFFICECLI_STATUS+'|'+$env:OFFICECLI_SKIP_UPDATE)"]);
+            } else {
+                command.args([
+                    "-c",
+                    "printf '%s|%s|%s' \"$THOR_OFFICECLI_PATH\" \"$THOR_OFFICECLI_STATUS\" \"$OFFICECLI_SKIP_UPDATE\"",
+                ]);
+            }
+            let output = command.output().await.unwrap();
+            assert!(output.status.success());
+            assert_eq!(
+                String::from_utf8_lossy(&output.stdout),
+                format!("{executable}|{status}|1")
+            );
+        }
     }
 
     #[test]

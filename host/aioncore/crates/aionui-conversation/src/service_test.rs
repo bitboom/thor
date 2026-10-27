@@ -2028,7 +2028,13 @@ async fn create_rejects_unavailable_workspace_with_trailing_whitespace_in_reques
     let dir = std::env::temp_dir().join(format!("aionui-test-{}", aionui_common::generate_short_id()));
     std::fs::create_dir(&dir).unwrap();
     let workspace = dir.join("workspace");
+    // POSIX distinguishes this missing suffixed path from the existing base.
+    // Win32 aliases trailing spaces, so its negative fixture must have an
+    // absent base as well; an existing Win32 alias is valid (tested below).
+    #[cfg(not(windows))]
     std::fs::create_dir(&workspace).unwrap();
+    #[cfg(windows)]
+    assert!(!workspace.exists());
     let workspace_with_trailing_space = format!("{} ", workspace.to_string_lossy());
 
     let req: CreateConversationRequest = serde_json::from_value(json!({
@@ -2043,6 +2049,26 @@ async fn create_rejects_unavailable_workspace_with_trailing_whitespace_in_reques
             if path == workspace_with_trailing_space
     ));
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn create_preserves_available_win32_workspace_alias_with_trailing_whitespace() {
+    let (svc, _broadcaster, _repo, _task_mgr) = make_service();
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir(&workspace).unwrap();
+    let alias = format!("{} ", workspace.to_string_lossy());
+    assert_eq!(
+        std::fs::canonicalize(&alias).unwrap(),
+        workspace.canonicalize().unwrap()
+    );
+    let req: CreateConversationRequest = serde_json::from_value(json!({
+        "type": "acp", "extra": { "workspace": alias }
+    }))
+    .unwrap();
+    let response = svc.create("user_1", req).await.unwrap();
+    assert_eq!(response.extra["workspace"], alias);
 }
 
 #[tokio::test]

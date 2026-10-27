@@ -74,15 +74,24 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Test runtime contracts and release rejection paths
         run: npm test
-      - name: Core quality gates
+      - name: Check Core formatting
         working-directory: host/aioncore
         run: |
           cargo fmt --all -- --check
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Run Core Clippy
+        working-directory: host/aioncore
+        run: |
           cargo clippy --locked --workspace --all-targets -- -D warnings
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Test Core workspace
+        working-directory: host/aioncore
+        run: |
           cargo test --locked --workspace --no-fail-fast
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Test Core local-channel regressions
+        working-directory: host/aioncore
+        run: |
           cargo test --locked -p aionui-app --lib local_channel::tests
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo test --locked -p aionui-app --test local_mode

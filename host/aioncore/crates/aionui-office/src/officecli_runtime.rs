@@ -35,6 +35,26 @@ pub(crate) struct VerifiedOfficecli {
     path: PathBuf,
 }
 
+/// Initialization-time capability for an existing agent's shell tools.
+/// This verifies these bytes now; it does not broker later shell invocations.
+pub struct AgentOfficecliRuntime {
+    pub executable: PathBuf,
+    pub version: String,
+    pub sha256: String,
+    pub size: u64,
+}
+
+pub fn resolve_agent_officecli() -> Result<AgentOfficecliRuntime, OfficeError> {
+    let asset = current_asset()?;
+    let cli = resolve_officecli_path()?;
+    Ok(AgentOfficecliRuntime {
+        executable: cli.path,
+        version: lock().version.clone(),
+        sha256: asset.sha256.clone(),
+        size: asset.size,
+    })
+}
+
 impl VerifiedOfficecli {
     pub(crate) fn command(&self) -> Builder {
         let mut command = Builder::clean_cli(&self.path);
@@ -89,7 +109,12 @@ fn current_asset() -> Result<&'static OfficecliAsset, OfficeError> {
 }
 
 pub(crate) fn resolve_officecli_path() -> Result<VerifiedOfficecli, OfficeError> {
-    if !current_asset()?.read_only_watch {
+    require_read_only(current_asset()?)?;
+    resolve_officecli_with_override(None)
+}
+
+fn require_read_only(asset: &OfficecliAsset) -> Result<(), OfficeError> {
+    if !asset.read_only_watch {
         return Err(OfficeError::RuntimePolicy {
             code: "OFFICECLI_READONLY_REQUIRED",
             message:
@@ -97,7 +122,7 @@ pub(crate) fn resolve_officecli_path() -> Result<VerifiedOfficecli, OfficeError>
                     .into(),
         });
     }
-    resolve_officecli_with_override(None)
+    Ok(())
 }
 
 pub(crate) fn resolve_officecli_with_override(configured: Option<&Path>) -> Result<VerifiedOfficecli, OfficeError> {
@@ -110,6 +135,11 @@ pub(crate) fn resolve_officecli_with_override(configured: Option<&Path>) -> Resu
             .join(&lock().version)
             .join(&asset.name),
     };
+    verified_path(&path, asset)
+}
+
+fn verified_path(path: &Path, asset: &OfficecliAsset) -> Result<VerifiedOfficecli, OfficeError> {
+    let path = path.canonicalize().map_err(|_| bundle_missing())?;
     verify_asset(&path, asset)?;
     Ok(VerifiedOfficecli { path })
 }
@@ -218,6 +248,50 @@ mod tests {
                 .contains("size mismatch")
         );
         assert!(resolve_officecli_with_override(Some(&path)).is_err());
+    }
+
+    #[test]
+    fn agent_capability_requires_readonly_pin_and_canonical_verified_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("Office CLI with spaces");
+        let bytes = b"synthetic approved agent CLI";
+        let mut asset = test_asset(bytes);
+        assert!(matches!(
+            require_read_only(&asset),
+            Err(OfficeError::RuntimePolicy {
+                code: "OFFICECLI_READONLY_REQUIRED",
+                ..
+            })
+        ));
+        asset.read_only_watch = true;
+        require_read_only(&asset).unwrap();
+        assert!(matches!(
+            verified_path(&path, &asset),
+            Err(OfficeError::RuntimePolicy {
+                code: "OFFICECLI_BUNDLE_MISSING",
+                ..
+            })
+        ));
+        std::fs::write(&path, bytes).unwrap();
+        let verified = verified_path(&path, &asset).unwrap();
+        assert!(verified.path.is_absolute());
+        assert_eq!(verified.path, path.canonicalize().unwrap());
+        std::fs::write(&path, vec![b'x'; bytes.len()]).unwrap();
+        assert!(matches!(
+            verified_path(&path, &asset),
+            Err(OfficeError::RuntimePolicy {
+                code: "OFFICECLI_INTEGRITY_FAILED",
+                ..
+            })
+        ));
+        std::fs::write(&path, b"partial").unwrap();
+        assert!(matches!(
+            verified_path(&path, &asset),
+            Err(OfficeError::RuntimePolicy {
+                code: "OFFICECLI_INTEGRITY_FAILED",
+                ..
+            })
+        ));
     }
 
     #[tokio::test]

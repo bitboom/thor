@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-10-27T18:13:05.546Z",
+  "recordedAt": "2026-10-27T19:15:52.885Z",
   "data": "synthetic-only",
   "installedDesktopVerified": false,
   "realCodexContinuity": {
@@ -55,18 +55,22 @@
     "bootstrapSucceeded": true,
     "reconstructedSourceCommit": "ab419fe7277ff23147583eeca05e06c0b2a39c59",
     "canonicalSourceSha256": "7f262c59c2b95c8a502f8af74cd952775f2cdc595943881d56e2ce6fff7e1d2a",
-    "windowsRunUrl": "https://github.com/bitboom/thor/actions/runs/40552652695",
-    "windowsSourceCommit": "895c32bc38b73015c4ba3753fd99663e79ee31cb",
+    "windowsRunUrl": "https://github.com/bitboom/thor/actions/runs/40558675063",
+    "windowsSourceCommit": "a2a945c9848ece743069294249b08d1006248591",
     "runtimeTestsPassed": 106,
     "windowsBuildSucceeded": false,
-    "failure": "Extension import test searched for forward-slash skill storage text in a native Windows path. The corrected default-cwd case passed.",
+    "failure": "Complete no-fail-fast workspace execution reported 72 failures across 15 targets. Windows path, shell, uptime and fixture assumptions require repair; no installer was built.",
     "releasePublished": false,
     "diagnosticSourceMustNotBeReleased": true,
     "windowsClippySucceeded": true,
-    "rustTestsPassedBeforeStop": 2156,
-    "rustTestsFailed": 1,
-    "rustFailureTarget": "aionui-app --test extension_e2e",
-    "rustTestsIgnoredBeforeStop": 12
+    "rustTestsFailed": 72,
+    "rustTestsPassed": 9255,
+    "rustTestsIgnored": 53,
+    "rustFailureTargets": 15,
+    "rustResultGroups": 251,
+    "completeWorkspaceAttempted": true,
+    "fullRustWorkspaceSucceeded": false,
+    "diagnosticArtifactProduced": false
   },
   "githubDefectTracking": {
     "issueUrl": "https://github.com/bitboom/thor/issues/1",
@@ -80,6 +84,18 @@
       "actualIssueCreatedAndReadBack": true,
       "syntheticInputsOnly": true,
       "installedAppFeedbackUiTested": false
+    },
+    "managedOfficeIssue": {
+      "issueUrl": "https://github.com/bitboom/thor/issues/3",
+      "actualIssueCreatedAndReadBack": true,
+      "sourceReviewFixOnly": true,
+      "candidateModelExecutionVerified": false
+    },
+    "feedbackCredentialIssue": {
+      "issueUrl": "https://github.com/bitboom/thor/issues/4",
+      "actualIssueCreatedAndReadBack": true,
+      "syntheticInputsOnly": true,
+      "installedAppFeedbackUiTested": false
     }
   },
   "limitations": [
@@ -88,11 +104,11 @@
     "No company mail, DRM, model or cookie skill was accessed."
   ],
   "localCandidateVerification": {
-    "baseCommit": "c49ce51d14831604f1014a3eb3400d853fd9f2da",
-    "scope": "Final local desktop checks plus separate exact-source MSVC results; full Core and installed acceptance remain pending.",
-    "runtimeReleaseTestsPassed": 106,
+    "baseCommit": "a2a945c9848ece743069294249b08d1006248591",
+    "scope": "Local Office integration, credential redaction and Windows compatibility changes on the stated base. The combined Rust patch passed full-workspace Windows GNU Clippy and formatting; exact-source MSVC, full Core and installed acceptance remain pending.",
+    "runtimeReleaseTestsPassed": 107,
     "desktopFullSuite": {
-      "passed": 5019,
+      "passed": 5021,
       "skipped": 8,
       "failed": 0,
       "passingFiles": 526,
@@ -104,11 +120,12 @@
     "desktopI18nValidationPassed": true,
     "existingUntranslatedKeyWarnings": 5,
     "windowsGnuWorkspaceAllTargetsClippyPassed": true,
-    "newRustExecutableTestsRun": true,
+    "newRustExecutableTestsRun": false,
     "candidateCrashHarnessRun": false,
     "installedDesktopVerified": false,
-    "runtimeReleaseSourceCommit": "895c32bc38b73015c4ba3753fd99663e79ee31cb",
-    "desktopSourceCommit": "c49ce51d14831604f1014a3eb3400d853fd9f2da",
-    "fullRustWorkspaceSucceeded": false
+    "runtimeReleaseSourceCommit": null,
+    "desktopSourceCommit": null,
+    "fullRustWorkspaceSucceeded": false,
+    "checksAgainstUncommittedChanges": true
   }
 }

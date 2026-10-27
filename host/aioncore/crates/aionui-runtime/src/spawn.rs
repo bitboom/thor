@@ -465,7 +465,15 @@ mod tests {
             preview.contains("hello"),
             "preview should include args prefix: {preview}"
         );
-        assert!(preview.contains("NO_COLOR=\"1\"") || preview.contains("NO_COLOR=1"));
+        assert_eq!(
+            builder
+                .inner
+                .as_std()
+                .get_envs()
+                .find_map(|(key, value)| (key == OsStr::new("NO_COLOR")).then_some(value))
+                .flatten(),
+            Some(OsStr::new("1"))
+        );
     }
 
     #[test]
@@ -476,19 +484,39 @@ mod tests {
             .args(["x", "--flag", "with space"]);
 
         let preview = format!("{b}");
-        // Format inherited from std Command Debug: `cd "..." && env -u X K=V "prog" "args"...`
-        assert!(
-            preview.starts_with(r#"cd "/tmp/work dir" &&"#),
-            "missing cwd prefix: {preview}"
+        let command = b.inner.as_std();
+        assert_eq!(command.get_current_dir(), Some(Path::new("/tmp/work dir")));
+        assert_eq!(
+            command
+                .get_envs()
+                .find_map(|(key, value)| (key == OsStr::new("FOO")).then_some(value))
+                .flatten(),
+            Some(OsStr::new("bar baz"))
         );
-        assert!(preview.contains("env "), "expected env section: {preview}");
-        assert!(preview.contains(r#"FOO="bar baz""#), "FOO missing: {preview}");
-        // strip_pollution unsets these
-        assert!(
-            preview.contains("-u NODE_OPTIONS"),
-            "missing -u NODE_OPTIONS: {preview}"
-        );
-        assert!(preview.contains("-u CLAUDECODE"), "missing -u CLAUDECODE: {preview}");
+        for removed in ["NODE_OPTIONS", "CLAUDECODE"] {
+            assert!(
+                command
+                    .get_envs()
+                    .any(|(key, value)| key == OsStr::new(removed) && value.is_none())
+            );
+        }
+        // Unix std Command Debug renders cwd/env; Windows renders argv only.
+        // Configuration assertions above remain active on both platforms.
+        #[cfg(unix)]
+        {
+            assert!(
+                preview.starts_with(r#"cd "/tmp/work dir" &&"#),
+                "missing cwd prefix: {preview}"
+            );
+            assert!(preview.contains("env "), "expected env section: {preview}");
+            assert!(preview.contains(r#"FOO="bar baz""#), "FOO missing: {preview}");
+            // strip_pollution unsets these
+            assert!(
+                preview.contains("-u NODE_OPTIONS"),
+                "missing -u NODE_OPTIONS: {preview}"
+            );
+            assert!(preview.contains("-u CLAUDECODE"), "missing -u CLAUDECODE: {preview}");
+        }
         assert!(
             preview.contains(r#""/usr/local/bin/node""#),
             "program missing: {preview}"

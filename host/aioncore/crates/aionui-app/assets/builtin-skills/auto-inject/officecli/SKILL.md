@@ -23,21 +23,11 @@ description: Create, analyze, proofread, and modify Office documents (.docx, .xl
 
 AI-friendly CLI for .docx, .xlsx, .pptx. Single binary, no dependencies, no Office installation needed.
 
-## Install
+## Thor Office tool
 
-If `officecli` is not installed:
+Use only the verified bundled executable supplied by Thor. Require `THOR_OFFICECLI_STATUS=verified` and a nonempty `THOR_OFFICECLI_PATH`; preserve `OFFICECLI_SKIP_UPDATE=1`. If either requirement is not met, stop and tell the user that the Office tool is unavailable and to reinstall or update Thor from its verified release. Never download, install, update, or fall back to a PATH executable.
 
-```bash
-# macOS / Linux
-curl -fsSL https://d.officecli.ai/install.sh | bash
-
-# Windows (PowerShell)
-irm https://d.officecli.ai/install.ps1 | iex
-```
-
-Verify with `officecli --version`. If still not found after install, open a new terminal.
-
----
+Invoke the exact path as the executable: PowerShell `& $env:THOR_OFFICECLI_PATH --version`; POSIX `"$THOR_OFFICECLI_PATH" --version`. Throughout this skill, `officecli` in examples is shorthand: replace each invocation with the corresponding exact-path form, including in scripts and pipelines. Check each command result, and save or close document copies before inspecting them.
 
 ## Strategy
 

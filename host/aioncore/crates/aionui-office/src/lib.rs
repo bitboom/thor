@@ -13,6 +13,7 @@ pub mod watch_manager;
 
 pub use conversion::ConversionService;
 pub use error::OfficeError;
+pub use officecli_runtime::{AgentOfficecliRuntime, resolve_agent_officecli};
 pub use proxy::{ProxyError, ProxyService};
 pub use routes::{office_proxy_routes, office_routes};
 pub use state::OfficeRouterState;

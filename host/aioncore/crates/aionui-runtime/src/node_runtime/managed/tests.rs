@@ -222,17 +222,22 @@ async fn persistent_npm_version_failure_still_reports_bundled_resource_invalid()
 async fn managed_runtime_validation_uses_real_commands() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("node-v24.11.0-test");
-    let bin = root.join("bin");
-    std::fs::create_dir_all(&bin).unwrap();
-
-    let node = bin.join("node");
-    std::fs::write(&node, "#!/bin/sh\necho v24.11.0\n").unwrap();
+    #[cfg(windows)]
+    crate::test_support::write_windows_node_fixture(&root, false);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&node).unwrap().permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&node, perms).unwrap();
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+
+        let node = bin.join("node");
+        std::fs::write(&node, "#!/bin/sh\necho v24.11.0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&node).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&node, perms).unwrap();
+        }
     }
 
     let err = validate_managed_runtime(&root, None).await.unwrap_err();
@@ -461,11 +466,14 @@ fn managed_runtime_checksum_verification_detects_mismatch() {
 fn managed_runtime_injects_npm_state_under_runtime_root() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("node-v24.11.0-test");
+    #[cfg(windows)]
+    let bin = root.clone();
+    #[cfg(not(windows))]
     let bin = root.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
-    std::fs::write(bin.join("node"), b"").unwrap();
-    std::fs::write(bin.join("npm"), b"").unwrap();
-    std::fs::write(bin.join("npx"), b"").unwrap();
+    std::fs::write(bin.join(if cfg!(windows) { "node.exe" } else { "node" }), b"").unwrap();
+    std::fs::write(bin.join(if cfg!(windows) { "npm.cmd" } else { "npm" }), b"").unwrap();
+    std::fs::write(bin.join(if cfg!(windows) { "npx.cmd" } else { "npx" }), b"").unwrap();
 
     let runtime = runtime_from_root(&root, ResolvedNodeSource::Managed).expect("runtime");
     let env: std::collections::HashMap<_, _> = runtime

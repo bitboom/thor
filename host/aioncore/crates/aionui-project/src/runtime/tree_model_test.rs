@@ -231,13 +231,24 @@ async fn apply_synthesizes_rename_for_same_inode() {
     std::fs::rename(dir.path().join("old.txt"), dir.path().join("new.txt")).unwrap();
 
     let delta = tree.apply(c.as_str(), Hint::All).await.unwrap().expect("changes");
-    assert_eq!(
-        delta.changes,
+    let expected = if cfg!(unix) {
         vec![Change::Renamed {
             from: "old.txt".to_owned(),
-            to: "new.txt".to_owned()
+            to: "new.txt".to_owned(),
         }]
-    );
+    } else {
+        // Local provider reports unknown inode on non-Unix; both changes remain observable.
+        vec![
+            Change::Added {
+                name: "new.txt".to_owned(),
+                kind: Kind::File,
+            },
+            Change::Removed {
+                name: "old.txt".to_owned(),
+            },
+        ]
+    };
+    assert_eq!(delta.changes, expected);
 }
 
 #[tokio::test]

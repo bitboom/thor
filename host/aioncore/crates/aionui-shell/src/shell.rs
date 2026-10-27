@@ -370,7 +370,17 @@ mod tests {
 
     #[test]
     fn linux_show_item_uses_filemanager1_when_gdbus_available() {
-        let path = Path::new("/home/user/Downloads/AionUi.deb");
+        let (path, expected_uri) = if cfg!(windows) {
+            (
+                Path::new(r"C:\home\user\Downloads\AionUi.deb"),
+                "['file:///C:/home/user/Downloads/AionUi.deb']",
+            )
+        } else {
+            (
+                Path::new("/home/user/Downloads/AionUi.deb"),
+                "['file:///home/user/Downloads/AionUi.deb']",
+            )
+        };
         let (program, args) = linux_show_item_command(path, true);
         assert_eq!(program, "gdbus");
         assert_eq!(args[0], "call");
@@ -378,18 +388,28 @@ mod tests {
         assert!(args.iter().any(|a| a == "org.freedesktop.FileManager1.ShowItems"));
         // The file URI must target the file itself (so it gets highlighted),
         // not the parent directory, wrapped as a GVariant array literal.
-        assert!(args.contains(&"['file:///home/user/Downloads/AionUi.deb']".to_owned()));
+        assert!(args.contains(&expected_uri.to_owned()));
         // Trailing empty startup-id GVariant string.
         assert_eq!(args.last().unwrap(), "");
     }
 
     #[test]
     fn linux_show_item_percent_encodes_spaces_in_uri() {
-        let path = Path::new("/home/user/My Downloads/AionUi.deb");
+        let (path, expected_uri) = if cfg!(windows) {
+            (
+                Path::new(r"C:\home\user\My Downloads\AionUi.deb"),
+                "['file:///C:/home/user/My%20Downloads/AionUi.deb']",
+            )
+        } else {
+            (
+                Path::new("/home/user/My Downloads/AionUi.deb"),
+                "['file:///home/user/My%20Downloads/AionUi.deb']",
+            )
+        };
         let (program, args) = linux_show_item_command(path, true);
         assert_eq!(program, "gdbus");
         assert!(
-            args.contains(&"['file:///home/user/My%20Downloads/AionUi.deb']".to_owned()),
+            args.contains(&expected_uri.to_owned()),
             "space must be percent-encoded, got: {args:?}"
         );
     }

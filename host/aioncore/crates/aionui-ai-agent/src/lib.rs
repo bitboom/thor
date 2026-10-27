@@ -13,6 +13,7 @@ pub(crate) mod dev_prompt_dump;
 pub mod error;
 pub mod factory;
 pub(crate) mod idle_scanner;
+pub mod managed_office_runtime;
 pub mod manager;
 /// Neutral MCP resolution for the session-model port (claude/codex). Ported from
 /// clean-slate `aionui-agent-context::mcp_resolve` — the SSOT that turns a

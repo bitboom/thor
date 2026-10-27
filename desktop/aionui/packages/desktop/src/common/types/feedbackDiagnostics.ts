@@ -116,6 +116,26 @@ export type FeedbackDiagnosticsContextInput = {
   selectedModule?: string;
 };
 
+// Recognize common provider-prefixed credentials as well as OAuth JSON keys.
+const feedbackCredentialKey = String.raw`(?:[a-z0-9]+[_-])*(?:password|passwd|secret|token|api[_-]?key|authorization|cookie|access[_-]?token|refresh[_-]?token|auth[_-]?token|client[_-]?secret)`;
+// An unclosed quote consumes the rest of its line, including escaped quotes.
+const feedbackQuotedValue = String.raw`(?:"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|$)|'(?:\\[^\r\n]|[^'\\\r\n])*(?:'|$))`;
+// Escaped log/JSON wrappers can obscure both key and value boundaries. Redact
+// the whole affected line so escaped delimiters cannot leave a secret tail.
+const feedbackEscapedCredentialLine = new RegExp(
+  String.raw`^[^\r\n]*(?:\\+["']${feedbackCredentialKey}\\+["'][ \t]*[:=]|\b${feedbackCredentialKey}[ \t]*[:=][ \t]*\\+["'])[^\r\n]*`,
+  'gim'
+);
+const feedbackJsonCredential = new RegExp(
+  String.raw`((["'])${feedbackCredentialKey}\2[ \t]*[:=][ \t]*)${feedbackQuotedValue}`,
+  'gim'
+);
+const feedbackQuotedAssignment = new RegExp(
+  String.raw`(\b${feedbackCredentialKey}[ \t]*[:=][ \t]*)${feedbackQuotedValue}`,
+  'gim'
+);
+const feedbackAssignment = new RegExp(String.raw`(\b${feedbackCredentialKey}[ \t]*[:=][ \t]*)[^\s,;]+`, 'gi');
+
 /** Thor public-feedback text preparation. No diagnostics are collected here. */
 export function sanitizeFeedbackText(value: string): string {
   return value
@@ -128,12 +148,11 @@ export function sanitizeFeedbackText(value: string): string {
       '[REDACTED TOKEN]'
     )
     .replace(/^(\s*(?:cookie|set-cookie|authorization)\s*:)\s*[^\r\n]*/gim, '$1 [REDACTED]')
-    .replace(
-      /(["'](?:password|passwd|secret|token|api[_-]?key|authorization|cookie)["']\s*:\s*)["'][^"']*["']/gi,
-      '$1"[REDACTED]"'
-    )
+    .replace(feedbackEscapedCredentialLine, '[REDACTED CREDENTIAL LINE]')
+    .replace(feedbackJsonCredential, '$1"[REDACTED]"')
+    .replace(feedbackQuotedAssignment, '$1"[REDACTED]"')
     .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]')
-    .replace(/\b(password|passwd|secret|token|api[_-]?key|authorization|cookie)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]')
+    .replace(feedbackAssignment, '$1[REDACTED]')
     .replace(/\bfile:(?:\\?\/){2}[^\r\n\t"<>|]*/gi, '[REDACTED PATH]')
     .replace(/https?:\/\/[^\s<>]+/gi, '[REDACTED URL]')
     .replace(/\\{2,4}[^\\/\s"<>|]+[^\r\n\t"<>|]*/g, '[REDACTED PATH]')

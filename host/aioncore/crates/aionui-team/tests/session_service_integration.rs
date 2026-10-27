@@ -5581,8 +5581,8 @@ async fn add_agent_uses_team_temp_workspace_when_team_and_leader_workspaces_are_
 
     let got = svc.get_team("user1", &created.id).await.unwrap();
     assert!(
-        got.workspace
-            .contains(&format!("/conversations/team-temp-{}", created.id)),
+        std::path::Path::new(&got.workspace)
+            .ends_with(std::path::Path::new("conversations").join(format!("team-temp-{}", created.id))),
         "unexpected team temp workspace: {}",
         got.workspace
     );
@@ -5695,8 +5695,8 @@ async fn add_agent_continues_when_team_temp_leader_patch_fails() {
 
     let got = svc.get_team("user1", &created.id).await.unwrap();
     assert!(
-        got.workspace
-            .contains(&format!("/conversations/team-temp-{}", created.id))
+        std::path::Path::new(&got.workspace)
+            .ends_with(std::path::Path::new("conversations").join(format!("team-temp-{}", created.id)))
     );
     let added_extra = conv_repo.get_extra(&added.conversation_id).unwrap();
     assert_eq!(

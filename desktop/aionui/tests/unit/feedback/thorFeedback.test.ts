@@ -15,6 +15,34 @@ describe('public Thor feedback preparation', () => {
       'Cookie: session=CANARY_A; csrf=CANARY_B\nAuthorization: Basic CANARY_C\n{"token":"CANARY_D"}\nC:/Users/CANARY_E/file.txt';
     expect(prepareThorFeedback('Test', input).body).not.toMatch(/CANARY_[A-E]/);
   });
+  it('redacts known provider keys and OAuth tokens, including quoted or escaped values', () => {
+    const samples = [
+      'OPENAI_API_KEY=CANARY_A',
+      'ANTHROPIC_AUTH_TOKEN=CANARY_B',
+      'AIONUI_IMG_API_KEY="CANARY_C with spaces"',
+      "FACTORY_API_KEY='CANARY_D with spaces'",
+      'GEMINI_API_KEY=CANARY_E; Z_AI_API_KEY=CANARY_F',
+      JSON.stringify({
+        access_token: 'CANARY_G',
+        client_secret: 'CANARY_H',
+        apiKey: 'CANARY_I',
+        refreshToken: 'CANARY_J',
+        authToken: 'CANARY_K',
+      }),
+      JSON.stringify({ clientSecret: 'CANARY_L "quoted" CANARY_M' }),
+      'OPENAI_API_KEY="CANARY_N \\" escaped CANARY_O',
+      JSON.stringify(JSON.stringify({ access_token: 'CANARY_P', client_secret: 'CANARY_Q' })),
+      JSON.stringify('OPENAI_API_KEY="CANARY_R CANARY_S"'),
+    ];
+    for (const input of samples) {
+      const draft = prepareThorFeedback(input, input + '\n\nThor report ID: 12345678-1234-4234-8234-123456789abc');
+      expect(draft.title).not.toMatch(/CANARY_/);
+      expect(draft.body).not.toMatch(/CANARY_/);
+      expect(draft.body).toContain('\n\nThor report ID: 12345678-1234-4234-8234-123456789abc');
+      expect(prepareThorFeedback(draft.title, draft.body)).toEqual(draft);
+    }
+    expect(prepareThorFeedback('Status', 'Model configuration is ready.').body).toBe('Model configuration is ready.');
+  });
   it('is stable when the main process validates the reviewed payload', () => {
     const draft = prepareThorFeedback('Problem', 'Bearer abc123\npassword=hunter2');
     expect(prepareThorFeedback(draft.title, draft.body)).toEqual(draft);

@@ -5,6 +5,7 @@
 //! This file is a public façade — it only re-exports symbols defined in
 //! submodules. All logic lives in the modules below.
 
+mod agent_office;
 mod config;
 mod local_channel;
 mod router;

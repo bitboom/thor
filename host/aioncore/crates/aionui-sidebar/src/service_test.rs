@@ -23,6 +23,15 @@ use crate::ports::{ArchiveTeardownPorts, RemoveProjectPorts};
 const USER: &str = "user-1";
 const OTHER: &str = "user-2";
 
+// These synthetic paths are lexical fixtures; Windows requires a drive prefix.
+fn fixture_path(path: &str) -> std::borrow::Cow<'_, str> {
+    if cfg!(windows) && path.starts_with("/repo/") {
+        format!("C:{path}").into()
+    } else {
+        path.into()
+    }
+}
+
 // -- Fixture -----------------------------------------------------------------
 
 struct Fixture {
@@ -93,7 +102,7 @@ async fn insert_conv(pool: &SqlitePool, user: &str, id: &str, project_id: Option
 
 /// A conversation whose workspace lives in `extra.$.workspace`.
 async fn insert_conv_ws(pool: &SqlitePool, user: &str, id: &str, workspace: &str, updated_at: i64) {
-    let extra = serde_json::json!({ "workspace": workspace }).to_string();
+    let extra = serde_json::json!({ "workspace": fixture_path(workspace) }).to_string();
     insert_conv(pool, user, id, None, &extra, updated_at).await;
 }
 
@@ -178,12 +187,14 @@ async fn insert_temp_project(pool: &SqlitePool, user: &str, project_id: &str) {
 // -- Assertion helpers -------------------------------------------------------
 
 fn canon_of(path: &str) -> String {
-    let uri = canonical::to_file_uri(Path::new(path)).unwrap();
+    let path = fixture_path(path);
+    let uri = canonical::to_file_uri(Path::new(path.as_ref())).unwrap();
     canonical::canonicalize(&uri).unwrap().as_str().to_owned()
 }
 
 fn file_uri(path: &str) -> String {
-    canonical::to_file_uri(Path::new(path)).unwrap()
+    let path = fixture_path(path);
+    canonical::to_file_uri(Path::new(path.as_ref())).unwrap()
 }
 
 fn conv_ids(items: &[SidebarItem]) -> Vec<String> {
@@ -368,7 +379,7 @@ async fn dangling_project_id_falls_through_to_path() {
     .await;
     // project_id points at a project that does not exist -> treat as NULL, then
     // classify by workspace path (which merges onto proj-std).
-    let extra = serde_json::json!({ "workspace": "/repo/std" }).to_string();
+    let extra = serde_json::json!({ "workspace": fixture_path("/repo/std") }).to_string();
     insert_conv(pool, USER, "ghost", Some("no-such-proj"), &extra, 80).await;
 
     let resp = fx

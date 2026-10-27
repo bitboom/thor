@@ -1,5 +1,18 @@
 use super::*;
 
+// Test absolute file URIs on each host; a drive-free `/a` is not absolute on Windows.
+fn fixture_uri(uri: &str) -> String {
+    if cfg!(windows) && uri.starts_with("file:///") {
+        uri.replacen("file:///", "file:///C:/", 1)
+    } else {
+        uri.to_owned()
+    }
+}
+
+fn canonicalize(uri: &str) -> Result<Canonical, ProjectError> {
+    super::canonicalize(&fixture_uri(uri))
+}
+
 #[test]
 fn drops_trailing_slash() {
     assert_eq!(
@@ -55,7 +68,10 @@ fn casing_folds_per_platform() {
     if IGNORE_PATH_CASING {
         // macOS / Windows: same folder.
         assert_eq!(mixed, lower);
-        assert_eq!(mixed.as_str(), "file:///users/me/aion");
+        assert_eq!(
+            mixed.as_str(),
+            fixture_uri("file:///users/me/aion").to_ascii_lowercase()
+        );
     } else {
         // Linux: two distinct folders.
         assert_ne!(mixed, lower);
@@ -103,6 +119,11 @@ fn fs_path_roundtrips_canonical() {
 #[test]
 fn to_file_uri_does_not_fold_casing() {
     // to_file_uri is raw capture, not identity: casing is preserved.
-    let uri = to_file_uri(std::path::Path::new("/Users/Me/Aion")).unwrap();
-    assert_eq!(uri, "file:///Users/Me/Aion");
+    let path = if cfg!(windows) {
+        "C:/Users/Me/Aion"
+    } else {
+        "/Users/Me/Aion"
+    };
+    let uri = to_file_uri(std::path::Path::new(path)).unwrap();
+    assert_eq!(uri, fixture_uri("file:///Users/Me/Aion"));
 }

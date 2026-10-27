@@ -17,6 +17,8 @@ fn init_repo(dir: &Path) -> Repository {
     let mut cfg = repo.config().expect("config");
     cfg.set_str("user.name", "scm test").expect("set name");
     cfg.set_str("user.email", "scm@test.local").expect("set email");
+    cfg.set_bool("core.autocrlf", false)
+        .expect("disable line-ending conversion for fixture");
     repo
 }
 

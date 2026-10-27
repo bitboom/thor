@@ -28,7 +28,11 @@ struct TokenCache {
 
 impl TokenCache {
     fn is_expired(&self) -> bool {
-        self.acquired_at.elapsed() + TOKEN_REFRESH_MARGIN >= self.expires_in
+        self.is_expired_at(Instant::now())
+    }
+
+    fn is_expired_at(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.acquired_at) + TOKEN_REFRESH_MARGIN >= self.expires_in
     }
 }
 
@@ -346,23 +350,25 @@ mod tests {
 
     #[test]
     fn token_cache_expired() {
+        let acquired_at = Instant::now();
         let cache = TokenCache {
             token: "test".into(),
-            acquired_at: Instant::now() - Duration::from_secs(7200),
+            acquired_at,
             expires_in: Duration::from_secs(7200),
         };
-        assert!(cache.is_expired());
+        assert!(cache.is_expired_at(acquired_at + Duration::from_secs(7200)));
     }
 
     #[test]
     fn token_cache_near_expiry() {
-        // Token acquired 6900s ago with 7200s TTL — within 5min margin
+        let acquired_at = Instant::now();
         let cache = TokenCache {
             token: "test".into(),
-            acquired_at: Instant::now() - Duration::from_secs(6900),
+            acquired_at,
             expires_in: Duration::from_secs(7200),
         };
-        assert!(cache.is_expired());
+        assert!(!cache.is_expired_at(acquired_at + Duration::from_secs(6899)));
+        assert!(cache.is_expired_at(acquired_at + Duration::from_secs(6900)));
     }
 
     #[test]

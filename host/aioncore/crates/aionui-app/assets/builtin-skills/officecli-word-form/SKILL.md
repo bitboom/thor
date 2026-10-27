@@ -23,31 +23,11 @@ description: "Use this skill to create fillable Word forms (.docx) with real Con
 
 **This skill is INDEPENDENT, not a scene layer on docx.** A form's payload — `<w:sdt>` controls, `<w:ffData>` legacy fields, `<w:fldChar>` mail-merge, `documentProtection` — is a distinct element class from docx's paragraph/heading/style primitives. Its QA is different too: docx's Delivery Gate cares about visual layout and live PAGE fields, this skill's cares about data plumbing (protection enforced / alias+tag / items injected / name ≤ 20 / no underscore anti-pattern). **Reverse handoff:** if the user's document has no fillable fields (report, letter, memo, thesis, proposal), route to `officecli-docx` or a docx scene skill — don't use this one.
 
-## BEFORE YOU START (CRITICAL)
+## Thor Office tool
 
-**If `officecli` is not installed:**
+Use only the verified bundled executable supplied by Thor. Require `THOR_OFFICECLI_STATUS=verified` and a nonempty `THOR_OFFICECLI_PATH`; preserve `OFFICECLI_SKIP_UPDATE=1`. If either requirement is not met, stop and tell the user that the Office tool is unavailable and to reinstall or update Thor from its verified release. Never download, install, update, or fall back to a PATH executable.
 
-`macOS / Linux`
-
-```bash
-if ! command -v officecli >/dev/null 2>&1; then
-    curl -fsSL https://d.officecli.ai/install.sh | bash
-fi
-```
-
-`Windows (PowerShell)`
-
-```powershell
-if (-not (Get-Command officecli -ErrorAction SilentlyContinue)) {
-    irm https://d.officecli.ai/install.ps1 | iex
-}
-```
-
-Verify: `officecli --version`
-
-If `officecli` is still not found after first install, open a new terminal and run the verify command again.
-
-If the install command above fails (e.g. blocked by security policy, no network access, or insufficient permissions), install manually — download the binary for your platform from https://github.com/iOfficeAI/OfficeCLI/releases — then re-run the verify command.
+Invoke the exact path as the executable: PowerShell `& $env:THOR_OFFICECLI_PATH --version`; POSIX `"$THOR_OFFICECLI_PATH" --version`. Throughout this skill, `officecli` in examples is shorthand: replace each invocation with the corresponding exact-path form, including in scripts and pipelines. Check each command result, and save or close document copies before inspecting them.
 
 ## Help-First Rule
 
