@@ -1,0 +1,15 @@
+# Desktop preview and feedback
+
+Thor uses AionUi's desktop and AionCore's local preview services. DOCX, XLSX, and PPTX previews use OfficeCLI; PDF has a separate viewer. Legacy Office binaries and macro-enabled Office files are not supported by that Office preview path. Preview is not Microsoft Office and does not guarantee identical layout or full editing behavior. Preserve the original file and review the saved result in the target application where fidelity matters.
+
+OfficeCLI's watch service caches rendered content. When an external tool changes an Office document, use the preview refresh control to request a new render. A browser reload alone can return the cached rendering. A failed refresh must leave the update indicator visible. A successful refresh does not establish that another process has flushed its pending writes.
+
+A release intended for restricted networks must separately verify its OfficeCLI binary version and checksum, prevent unapproved automatic downloads/updates, and test with outbound network blocked. Some upstream preview output references remote fonts and other assets; a package must block or explicitly approve those requests and test the resulting rendering before claiming offline operation.
+
+Feedback is intended for the public `bitboom/thor` issue tracker. Review the exact issue draft before sharing it. Do not include private documents, logs, credentials, local paths, or screenshots. Automated redaction is a convenience, not a guarantee that every sensitive value is detected.
+
+In MCP settings, **Add sample mail MCP** tests and registers the packaged synthetic server. The sample is made-up content and does not connect an account. Enable/select it in a new conversation to use its six tools. If a server with the same name already exists, Thor leaves it untouched. See `docs/runtime/synthetic-mail.md` for the sample IDs and limits.
+
+The desktop feedback form submits the reviewed title and body to `bitboom/thor` using authenticated GitHub CLI (`gh`) with issue permission, or opens the exact reviewed draft in a browser when CLI authentication is unavailable. Browser submission requires the user to submit the issue on GitHub; Thor can then verify its report ID against the 100 most recent public issues. No token is supplied to the renderer. A report ID appears in the preview and issue body; Thor writes only that ID to its profile before sending. If a response is lost or the app exits during submission, the next feedback dialog blocks another submission until the user searches GitHub for that ID and acknowledges the check. GitHub search can be delayed, so a missing search result alone does not prove an issue was not created. The user can inspect recent issues directly before continuing. Automatic redaction does not establish that arbitrary text is safe for publication.
+
+Thor uses a separate application identity and profile. It does not automatically import or delete AionUi's legacy temporary data; import of existing AionUi data is not implemented. The installer and runtime register `thor://`, leaving `aionui://` with its existing owner.

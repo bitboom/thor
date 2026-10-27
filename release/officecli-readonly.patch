@@ -1,0 +1,99 @@
+diff --git a/src/officecli/Core/CliLogger.cs b/src/officecli/Core/CliLogger.cs
+index 318aed020b838033a7cb7fdaa0cfe982461d2e38..8f5383320849a31cfc308a2a169774cabc8b3758 100644
+--- a/src/officecli/Core/CliLogger.cs
++++ b/src/officecli/Core/CliLogger.cs
+@@ -14,11 +14,9 @@ internal static class CliLogger
+ 
+     internal static bool Enabled
+     {
+-        get
+-        {
+-            try { return UpdateChecker.LoadConfig().Log; }
+-            catch { return false; }
+-        }
++        // A shared upstream log preference must not capture Thor document paths
++        // or command contents. Thor diagnostics are explicit and reviewed.
++        get => false;
+     }
+ 
+     internal static void LogCommand(string[] args)
+diff --git a/src/officecli/Core/Watch/WatchServer.cs b/src/officecli/Core/Watch/WatchServer.cs
+index d68de662c0616939567cb4a13898c16d67e39b25..69e7600008e5d12bac27c97739d7fcb22554bc24 100644
+--- a/src/officecli/Core/Watch/WatchServer.cs
++++ b/src/officecli/Core/Watch/WatchServer.cs
+@@ -1887,6 +1887,16 @@ internal class WatchServer : IDisposable
+             var stream = client.GetStream();
+             var (requestLine, headers, bodyPrefix) = await ReadHttpRequestHeaderAsync(stream, token);
+ 
++            // Thor's embedded preview is an HTTP read-only surface. Document edits
++            // are performed by the separately authorized CLI, never a web page.
++            // Enforce this on the listener itself, including requests outside Electron.
++            if (!IsThorReadOnlyRequestAllowed(requestLine, headers))
++            {
++                await WriteForbiddenAsync(stream, "403 Forbidden: Thor preview is read-only.\n", token);
++                client.Close();
++                return;
++            }
++
+             // Anti-DNS-rebinding gate. A rebinding attack reaches this loopback
+             // port but the request carries the attacker's domain in the Host
+             // header (a header page JS cannot forge), so any request whose Host
+@@ -2060,13 +2070,28 @@ internal class WatchServer : IDisposable
+ 
+     private static HashSet<string> BuildAllowedHosts()
+     {
+-        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
++        return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+         { "localhost", "127.0.0.1", "[::1]", "::1" };
+-        var extra = Environment.GetEnvironmentVariable("OFFICECLI_WATCH_ALLOWED_HOSTS");
+-        if (!string.IsNullOrWhiteSpace(extra))
+-            foreach (var h in extra.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+-                set.Add(h);
+-        return set;
++    }
++
++    private bool IsThorReadOnlyRequestAllowed(string requestLine, Dictionary<string, string> headers)
++    {
++        var parts = requestLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
++        if (parts.Length != 3 || parts[0] != "GET" ||
++            (parts[1] != "/" && parts[1] != "/events"))
++            return false;
++        if (headers.ContainsKey("Upgrade")) return false;
++        if (headers.TryGetValue("Connection", out var connection) &&
++            connection.Split(',').Any(value => value.Trim().Equals("upgrade", StringComparison.OrdinalIgnoreCase)))
++            return false;
++        if (!headers.TryGetValue("Origin", out var origin)) return true;
++        // Origins are scheme+host+port. A different localhost port is not this
++        // preview's origin; opaque file/data origins must also fail closed.
++        return Uri.TryCreate(origin, UriKind.Absolute, out var uri) &&
++            uri.Scheme == "http" && uri.Port == _port &&
++            string.IsNullOrEmpty(uri.UserInfo) && uri.AbsolutePath == "/" &&
++            string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment) &&
++            _allowedHosts.Contains(uri.Host);
+     }
+ 
+     /// <summary>Strip the optional <c>:port</c> from a Host header value, preserving bracketed IPv6.</summary>
+diff --git a/src/officecli/Program.cs b/src/officecli/Program.cs
+index 54c58f6d366c6cbc278ee1883215bd12e5172b21..e7b4ff19624af97b4b9ad15d060fdcf07d952a61 100644
+--- a/src/officecli/Program.cs
++++ b/src/officecli/Program.cs
+@@ -1,6 +1,10 @@
+ // Copyright 2026 OfficeCLI (https://OfficeCLI.AI)
+ // SPDX-License-Identifier: Apache-2.0
+ 
++// Thor ships this dependency in its verified application bundle. Never replace
++// that binary or refresh shared agent configuration outside Thor's updater.
++Environment.SetEnvironmentVariable("OFFICECLI_SKIP_UPDATE", "1");
++
+ 
+ // Ensure UTF-8 output on all platforms (Windows defaults to system codepage
+ // e.g. GBK). How that is reached depends on where the stream actually goes:
+@@ -262,7 +266,7 @@ OfficeCli.Core.CliLogger.LogCommand(args);
+ 
+ // Auto-install: if running outside ~/.local/bin/officecli, copy self there.
+ // Fresh install → full Run() (binary + skills + MCP). Upgrade → binary only.
+-OfficeCli.Core.Installer.MaybeAutoInstall(args);
++// Disabled in Thor: the application owns its dependency installation.
+ 
+ // Non-blocking update check: spawns background upgrade if stale
+ if (Environment.GetEnvironmentVariable("OFFICECLI_SKIP_UPDATE") != "1")

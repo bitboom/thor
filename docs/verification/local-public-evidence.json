@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-27T16:09:00Z",
+  "data": "synthetic-only",
+  "installedDesktopVerified": false,
+  "realCodexContinuity": {
+    "core": "official-reference-v0.2.2",
+    "patchedCore": false,
+    "codexVersion": "0.164.0-alpha.11.1",
+    "conversationId": "569cbc19",
+    "completedAt": "2026-10-27T16:02:54.660Z",
+    "persistedMessages": 57,
+    "persistedToolCalls": 50,
+    "completedToolCalls": 50,
+    "server": "thor_synthetic_mail",
+    "tool": "mail_read",
+    "messageId": "msg-notes-004",
+    "completionMarker": "THOR_50_STEPS_COMPLETE",
+    "forcedCrashRecoveryTested": false
+  },
+  "officeReadonlyListener": {
+    "upstreamSourceCommit": "5e625bf58aca732335590d7aa271f6337535a7ef",
+    "patchSha256": "26107c07469d94661f3a3e4e090936b0a712845c15295a6a84f5ea523f910f04",
+    "executableSha256": "2773251a53f595af0ed061071a28d6bb79cab2ec876bf02cb516cffd254bd6df",
+    "sdkVersion": "10.0.403",
+    "freshIsolatedCheckoutBuild": true,
+    "policy": "thor-readonly-v1",
+    "liveHttpPreview": true,
+    "deniedHttpRequests": 30,
+    "deniedCases": ["all POST mutation routes with same, different and missing Origin", "foreign or opaque Origin reads", "unexpected routes and query strings", "foreign Host despite inherited allowlist", "WebSocket upgrade"],
+    "documentHashPreservedAfterHttp": true,
+    "authorizedCliEditFlushedAndPersisted": true,
+    "syntheticOfficeFilesSchemaValidated": 18,
+    "syntheticOfficeFilesHashesPreserved": 18,
+    "browserCsrfTested": false,
+    "installedDesktopPreviewTested": false
+  },
+  "githubScaffold": {
+    "commit": "7e634286e8658363215aeec33d57ae19134f9df8",
+    "runUrl": "https://github.com/bitboom/thor/actions/runs/40537555736",
+    "sourceDetectionJobCompleted": true,
+    "windowsBuildExecuted": false,
+    "releasePublished": false,
+    "reason": "Workflow permission check only; full source has not yet been seeded."
+  },
+  "limitations": [
+    "No installed-app UI, automatic update, app feedback issue or release-loop acceptance yet.",
+    "Native UI helper currently returns codex app-server exited before returning response; Chrome binding returns Debugger unattached.",
+    "No company mail, DRM, model or cookie skill was accessed."
+  ]
+}

@@ -1,0 +1,16 @@
+Thor
+Copyright 2026 bitboom
+
+This product includes modified copies of:
+- AionUi by iOfficeAI and contributors, Apache License 2.0.
+  Source: https://github.com/iOfficeAI/AionUi
+- AionCore by iOfficeAI and contributors, Apache License 2.0.
+  Source: https://github.com/iOfficeAI/AionCore
+
+Upstream copyright notices and license texts remain in their respective
+desktop/aionui and host/aioncore directories. Source revisions are recorded
+in upstream.lock.json. Thor changes include product identity, update feed,
+privacy defaults, feedback submission, and synthetic MCP integration.
+
+Third-party components bundled by the upstream projects retain their own
+licenses. Thor is an independent project and is not an official AionUi product.

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "version": "0.1.0",
+  "preparedFromCommit": "f76ec0b571775caf30c6c09a42448e4e263908cc",
+  "sourceTreeSha256": "7f262c59c2b95c8a502f8af74cd952775f2cdc595943881d56e2ce6fff7e1d2a",
+  "sourceTreeFileCount": 3833,
+  "upstream": {
+    "desktop": {
+      "repository": "https://github.com/iOfficeAI/AionUi",
+      "commit": "11cd2a9a20d1e033157636efc570b41384c66d85",
+      "directory": "desktop/aionui"
+    },
+    "host": {
+      "repository": "https://github.com/iOfficeAI/AionCore",
+      "commit": "47e66d0d151123e973b3fd1e77afcb5671b3f8c5",
+      "directory": "host/aioncore"
+    }
+  },
+  "patch": {
+    "file": "release/bootstrap/integration.patch",
+    "sha256": "8d24efb86781ac7621adbddfadab982e314222a38355e8d76e7813aec051c9c9"
+  }
+}

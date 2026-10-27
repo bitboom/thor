@@ -1,0 +1,20 @@
+import { mkdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+import { root, readJson, verifyRelease } from './artifact-lib.mjs';
+import { sourceProvenance } from './stage-resources.mjs';
+
+if (process.env.GITHUB_REPOSITORY !== 'bitboom/thor' || process.env.GITHUB_REF_TYPE !== 'tag' || !process.env.GITHUB_SHA || !process.env.GH_TOKEN) throw new Error('Publishing requires the Thor tagged GitHub Actions context.');
+const version = readJson(path.join(root, 'desktop/aionui/package.json')).version;
+const output = path.resolve(process.argv[2] || path.join(root, 'artifacts'));
+const tag = process.env.GITHUB_REF_NAME;
+const options = { version, upstream: readJson(path.join(root, 'upstream.lock.json')), tag, commit: process.env.GITHUB_SHA, sourceSha256: sourceProvenance().sha256 };
+const checked = verifyRelease({ ...options, output });
+const gh = args => execFileSync('gh', args, { cwd: root, stdio: 'inherit', env: { ...process.env, GH_NO_UPDATE_NOTIFIER: '1', GH_NO_EXTENSION_UPDATE_NOTIFIER: '1' } });
+gh(['release', 'create', tag, ...checked.files.map(file => path.join(output, file)), '--repo', 'bitboom/thor', '--verify-tag', '--draft', '--title', `Thor ${tag}`, '--notes-file', path.join(root, 'release-notes.md')]);
+const downloaded = path.join(root, '.thor-local/publish-verify', process.env.GITHUB_RUN_ID || 'run', process.env.GITHUB_RUN_ATTEMPT || '1');
+mkdirSync(downloaded, { recursive: true });
+gh(['release', 'download', tag, '--repo', 'bitboom/thor', '--dir', downloaded, '--clobber']);
+verifyRelease({ ...options, output: downloaded });
+gh(['release', 'edit', tag, '--repo', 'bitboom/thor', '--draft=false', '--latest']);
+console.log(`Published checked draft assets for Thor ${tag}.`);

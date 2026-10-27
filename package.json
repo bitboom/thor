@@ -1,0 +1,16 @@
+{
+  "name": "thor-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "node --test tests/runtime/*.test.mjs release/*.test.mjs release/bootstrap/*.test.mjs",
+    "build:windows": "node release/build-windows.mjs",
+    "build:host": "node release/build-host.mjs",
+    "verify:release": "node release/verify-artifacts.mjs",
+    "release:notes": "node release/write-notes.mjs"
+  },
+  "devDependencies": {
+    "js-yaml": "4.3.2"
+  }
+}

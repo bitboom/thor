@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/iOfficeAI/OfficeCLI.git",
+  "commit": "5e625bf58aca732335590d7aa271f6337535a7ef",
+  "version": "v1.0.159",
+  "sdkVersion": "10.0.403",
+  "policy": "thor-readonly-v1",
+  "patch": {
+    "file": "release/officecli-readonly.patch",
+    "sha256": "26107c07469d94661f3a3e4e090936b0a712845c15295a6a84f5ea523f910f04"
+  },
+  "packageLockSha256": "a606d810103d84a6a75eafd2bf348dff7eedf05a63e3b9a3e17de1752d770396"
+}

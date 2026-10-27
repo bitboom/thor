@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "desktop": {
+    "repository": "https://github.com/iOfficeAI/AionUi",
+    "commit": "11cd2a9a20d1e033157636efc570b41384c66d85",
+    "directory": "desktop/aionui",
+    "integration": "git subtree --squash",
+    "license": "Apache-2.0"
+  },
+  "host": {
+    "repository": "https://github.com/iOfficeAI/AionCore",
+    "tag": "v0.2.2",
+    "commit": "47e66d0d151123e973b3fd1e77afcb5671b3f8c5",
+    "directory": "host/aioncore",
+    "integration": "git subtree --squash",
+    "license": "Apache-2.0"
+  },
+  "toolchain": { "node": "24.22.1", "bun": "1.4.4", "rust": "1.95.0", "dotnet": "10.0.403" },
+  "managedNode": {
+    "version": "24.11.0",
+    "runtimeKey": "win32-x64",
+    "archive": "node-v24.11.0-win-x64.zip",
+    "url": "https://nodejs.org/dist/v24.11.0/node-v24.11.0-win-x64.zip",
+    "sha256": "1054540bce22b54ec7e50ebc078ec5d090700a77657607a58f6a64df21f49fdd",
+    "executableSha256": "b7d912484d42e7a0d0cb5b26a86410ec973a79ece7d61ad535e2d1a97a9026e1",
+    "checksumsUrl": "https://nodejs.org/dist/v24.11.0/SHASUMS256.txt"
+  },
+  "officeCliLock": "host/aioncore/crates/aionui-office/assets/officecli.lock.json",
+  "officeCliSourceLock": "release/officecli-source.lock.json",
+  "githubCli": {
+    "version": "2.103.3",
+    "archive": "gh_2.103.3_windows_amd64.zip",
+    "url": "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_windows_amd64.zip",
+    "sha256": "98d0cfa794721665d7973dd728c78aff7bd836d58f10f6d7a03568eccb0a22e0",
+    "size": 15197187,
+    "executableSha256": "d303d8ac3f5e9438bf7c977b64dd6425513eae46218f8881d30694f28c1d0dfd",
+    "license": "MIT"
+  },
+  "hubTag": "dist-ebc6a2b",
+  "hub": {
+    "repository": "https://github.com/iOfficeAI/AionHub",
+    "commit": "42565ebaa017d2b828cf49200291cbce5cd60d63",
+    "indexSha256": "19712638ecb4c4fbc38b86f40ff93d3a05c6de285395b23eae49c83a9a4e64cf"
+  }
+}

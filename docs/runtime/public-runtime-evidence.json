@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-27T15:47:58.287Z",
+  "data": "synthetic-only",
+  "referenceCore": {
+    "version": "0.2.2",
+    "source": "https://github.com/iOfficeAI/AionCore/releases/tag/v0.2.2",
+    "sha256": "67eb02774bab3855b759ec9756c2e540cd17b64b850407fa4b8bad07fd8a0892",
+    "patchedCore": false
+  },
+  "codex": {
+    "version": "0.164.0-alpha.11.1",
+    "authType": "chatgpt",
+    "globalConfigModified": false
+  },
+  "stdioMcpProtocol": {
+    "testsPassed": 8,
+    "realChildProcess": true
+  },
+  "installedCodexMcpClient": {
+    "ephemeralThread": true,
+    "discoveredTools": 6,
+    "search": true,
+    "publicBase64Attachment": true,
+    "deniedAttachment": true,
+    "inference": false
+  },
+  "realCoreCodexTask": {
+    "conversationId": "d41dfd0c",
+    "initial": {
+      "passed": true,
+      "realModelInference": true,
+      "mailSearch": true,
+      "mailRead": true,
+      "correctDate": true,
+      "workspaceMemory": true
+    },
+    "restartResume": {
+      "passed": true,
+      "historyPersisted": true,
+      "mcpDefinitionPersisted": true,
+      "nativeSessionRecall": true,
+      "workspaceMemoryRecall": true,
+      "mcpAfterResume": true
+    },
+    "cancel": {
+      "passed": true,
+      "cancellationAcknowledged": true,
+      "returnedIdle": true,
+      "subsequentTurnSucceeded": true
+    }
+  },
+  "pinnedOfficecli": {
+    "version": "1.0.159",
+    "sha256": "572c0a4da35333cf866fa5a2fb8259a4a2a8c9922be031d6b7a86936282ef94e",
+    "createdFormats": [
+      "docx",
+      "xlsx",
+      "pptx"
+    ],
+    "liveWatchHtml": true,
+    "visualFidelityTested": false
+  },
+  "unitTests": {
+    "total": 21,
+    "passed": 21,
+    "includesSyntheticMcp": true,
+    "includesPinnedDownloader": true,
+    "includesMemoryStore": true
+  },
+  "stillUnverified": [
+    "Patched Core MSVC build and runtime",
+    "Native memory policy with model save/update/delete and five Core restarts",
+    "Installed desktop upgrade data preservation",
+    "Enterprise connectors and DRM",
+    "Second authenticated agent backend"
+  ]
+}

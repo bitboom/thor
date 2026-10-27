@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bitboom/thor/contracts/synthetic-mail.schema.json",
+  "title": "Thor synthetic mail tool result v1",
+  "description": "Tool input contracts are exported by integrations/synthetic-mail/tools.mjs. Every result explicitly identifies its synthetic origin.",
+  "type": "object",
+  "properties": {
+    "synthetic": { "const": true },
+    "error": { "$ref": "#/$defs/error" },
+    "attachments": { "type": "array", "items": { "$ref": "#/$defs/attachment" } },
+    "messages": { "type": "array", "items": { "$ref": "#/$defs/messageSummary" } },
+    "nextCursor": { "type": ["string", "null"] },
+    "total": { "type": "integer", "minimum": 0 },
+    "content": { "type": "string" },
+    "encoding": { "enum": ["text", "base64"] }
+  },
+  "required": ["synthetic"],
+  "$defs": {
+    "error": {
+      "type": "object",
+      "properties": { "code": { "enum": ["INVALID_ARGUMENT", "INVALID_CURSOR", "NOT_FOUND", "ACCESS_DENIED", "AUTHORIZATION_REQUIRED", "AUTHORIZATION_EXPIRED"] }, "message": { "type": "string" } },
+      "required": ["code", "message"],
+      "additionalProperties": false
+    },
+    "attachment": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" }, "messageId": { "type": "string" }, "filename": { "type": "string" }, "mimeType": { "type": "string" }, "size": { "type": "integer", "minimum": 0 }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "protection": { "type": "object", "properties": { "simulated": { "const": true }, "policy": { "enum": ["public", "allow", "deny", "expire"] }, "status": { "enum": ["public", "denied", "authorized", "expired", "authorization_required"] }, "expiresAt": { "type": "string", "format": "date-time" } }, "required": ["simulated", "policy", "status"], "additionalProperties": false }
+      },
+      "required": ["id", "messageId", "filename", "mimeType", "size", "sha256", "protection"],
+      "additionalProperties": false
+    },
+    "messageSummary": {
+      "type": "object",
+      "properties": { "id": { "type": "string" }, "threadId": { "type": "string" }, "from": { "type": "string" }, "to": { "type": "array", "items": { "type": "string" } }, "subject": { "type": "string" }, "sentAt": { "type": "string", "format": "date-time" }, "labels": { "type": "array", "items": { "type": "string" } }, "snippet": { "type": "string" }, "attachmentCount": { "type": "integer", "minimum": 0 } },
+      "required": ["id", "threadId", "from", "to", "subject", "sentAt", "labels", "snippet", "attachmentCount"],
+      "additionalProperties": false
+    }
+  }
+}
