@@ -1,0 +1,135 @@
+name: Thor Windows
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: thor-windows-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.source.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect reconstructed source
+        id: source
+        shell: bash
+        run: |
+          if [[ -f desktop/aionui/package.json && -f host/aioncore/Cargo.toml ]]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo 'Seed checkout: the bootstrap workflow must reconstruct source before Windows builds.'
+          fi
+  windows:
+    needs: source
+    if: needs.source.outputs.ready == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      CI: 'true'
+      ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+      CARGO_TERM_COLOR: always
+      CARGO_HTTP_TIMEOUT: '600'
+      CARGO_NET_RETRY: '10'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.95.0'
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.403'
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host/aioncore -> target
+          shared-key: thor-windows-x64-msvc
+      - name: Install locked release dependencies
+        run: npm ci --ignore-scripts
+      - name: Check package, tag and upstream versions
+        run: node release/check-version.mjs
+      - name: Install locked desktop dependencies
+        working-directory: desktop/aionui
+        run: bun install --frozen-lockfile
+      - name: Test runtime contracts and release rejection paths
+        run: npm test
+      - name: Core quality gates
+        working-directory: host/aioncore
+        run: |
+          cargo fmt --all -- --check
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --locked --workspace
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Desktop quality gates
+        working-directory: desktop/aionui
+        run: |
+          bun run lint -- --quiet
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          bun run format:check
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          bunx tsc --noEmit
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          bun run i18n:types
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          node scripts/check-i18n.js
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          bun run test --maxWorkers=4
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build Windows installer
+        run: node release/build-windows.mjs
+      - name: Verify installer and update manifest
+        run: node release/verify-artifacts.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: thor-windows-x64
+          if-no-files-found: error
+          path: |
+            desktop/aionui/out/Thor-*-win-x64.exe
+            desktop/aionui/out/Thor-*-win-x64.exe.blockmap
+            desktop/aionui/out/latest.yml
+            desktop/aionui/out/SHA256SUMS.txt
+            desktop/aionui/out/thor-build.json
+            desktop/aionui/out/THIRD_PARTY_NOTICES.txt
+  publish:
+    if: github.repository == 'bitboom/thor' && startsWith(github.ref, 'refs/tags/v')
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      - name: Install locked verifier dependencies
+        run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: thor-windows-x64
+          path: artifacts
+      - name: Generate preview release notes
+        run: node release/write-notes.mjs
+      - name: Verify downloaded artifacts, then publish checked draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node release/publish.mjs artifacts

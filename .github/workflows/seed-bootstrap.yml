@@ -1,0 +1,37 @@
+name: Reconstruct reviewed Thor source
+on:
+  push:
+    branches: [main]
+    paths:
+      - release/bootstrap/manifest.json
+      - release/bootstrap/integration.patch
+  workflow_dispatch:
+    inputs:
+      seed_sha:
+        description: Exact reviewed seed commit on main
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: thor-source-bootstrap
+  cancel-in-progress: false
+jobs:
+  reconstruct:
+    if: github.repository == 'bitboom/thor' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.seed_sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      - name: Reconstruct, verify canonical snapshot and dispatch Windows build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          THOR_BOOTSTRAP_SEED_SHA: ${{ inputs.seed_sha || github.sha }}
+        run: node release/bootstrap/run.mjs
