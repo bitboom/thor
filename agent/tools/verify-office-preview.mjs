@@ -10,6 +10,7 @@ import { createServer, createConnection } from 'node:net';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { createPreviewProcessOwner, plannedFixturePaths, closeFixtureResidents, runPreviewAcceptance } from './owned-preview-process.mjs';
 
 const execute = promisify(execFile);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -124,19 +125,6 @@ async function requireClosed(port) {
   throw new Error('An owned preview port remained open after stop/close.');
 }
 
-async function waitExit(child, timeout) {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  await Promise.race([new Promise(resolve => child.once('exit', resolve)), pause(timeout)]);
-  if (child.exitCode === null && child.signalCode === null) throw new Error('Owned process did not stop.');
-}
-
-async function forceStop(child) {
-  if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return;
-  if (process.platform === 'win32') await execute('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }).catch(() => {});
-  else child.kill('SIGKILL');
-  await waitExit(child, 5000);
-}
-
 async function startCore(binary, managed, state, workspace) {
   await mkdir(state, { recursive: true });
   const port = await reservePort();
@@ -144,51 +132,61 @@ async function startCore(binary, managed, state, workspace) {
   // Windows Core observes this dedicated sentinel's exit through its documented
   // --parent-pid monitor. This lets acceptance exercise graceful desktop close
   // without terminating the harness or sending an unsupported Windows signal.
+  const owner = createPreviewProcessOwner({ requireClosed, terminate: async child => {
+    if (process.platform === 'win32') await execute('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 10000 });
+    else assert.equal(child.kill('SIGKILL'), true, 'Owned preview process could not be signaled.');
+  } });
   let sentinel;
-  if (process.platform === 'win32') {
-    sentinel = spawn(process.execPath, ['-e', 'process.stdin.resume()'], {
-      windowsHide: true, stdio: ['pipe', 'ignore', 'ignore'], env: childEnvironment(),
-    });
-    await new Promise((resolve, reject) => { sentinel.once('spawn', resolve); sentinel.once('error', reject); });
-  }
-  const child = spawn(binary, ['--local', '--host', '127.0.0.1', '--port', String(port), '--parent-pid', String(sentinel?.pid ?? process.pid),
-    '--data-dir', path.join(state, 'data'), '--work-dir', workspace, '--managed-resources-mode', 'bundled', '--log-level', 'error'], {
-    windowsHide: true, stdio: 'ignore', env: childEnvironment({ THOR_CORE_LOCAL_TOKEN: token,
-      AIONUI_BUNDLED_MANAGED_RESOURCES: managed, CODEX_SQLITE_HOME: path.join(state, 'codex-sqlite'),
-      OFFICECLI_SKIP_UPDATE: '1', OFFICECLI_WATCH_ALLOWED_HOSTS: 'thor-untrusted.invalid' }),
-  });
-  let failed = false;
-  child.once('error', () => { failed = true; });
-  const headers = { 'X-Thor-Local-Token': token };
-  const channel = {
-    port,
-    async get(route, extraHeaders = {}) { return http(port, route, { headers: { ...headers, ...extraHeaders } }); },
-    async post(route, payload) {
-      const response = await http(port, route, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      assert.equal(response.status, 200, 'Core Office route returned an unexpected HTTP status.');
-      let result;
-      try { result = JSON.parse(response.text); } catch { throw new Error('Core Office route did not return JSON.'); }
-      assert.equal(result.success, true, 'Core Office route returned a failed envelope.');
-      return result.data;
-    },
-    async close() {
-      if (sentinel) { sentinel.stdin.end(); await waitExit(sentinel, 5000); }
-      else if (child.exitCode === null) child.kill('SIGTERM');
-      await waitExit(child, 40000);
-      assert.equal(child.exitCode, 0, 'Core graceful close returned a failure.');
-      await requireClosed(port);
-    },
-    async cleanup() { await forceStop(child); await forceStop(sentinel); },
-  };
   try {
+    if (process.platform === 'win32') {
+      sentinel = owner.adopt('parent', spawn(process.execPath, ['-e', 'process.stdin.resume()'], {
+        windowsHide: true, stdio: ['pipe', 'ignore', 'ignore'], env: childEnvironment(),
+      }));
+      await new Promise((resolve, reject) => { sentinel.once('spawn', resolve); sentinel.once('error', reject); });
+    }
+    owner.adopt('Core', spawn(binary, ['--local', '--host', '127.0.0.1', '--port', String(port), '--parent-pid', String(sentinel?.pid ?? process.pid),
+      '--data-dir', path.join(state, 'data'), '--work-dir', workspace, '--managed-resources-mode', 'bundled', '--log-level', 'error'], {
+      windowsHide: true, stdio: 'ignore', env: childEnvironment({ THOR_CORE_LOCAL_TOKEN: token,
+        AIONUI_BUNDLED_MANAGED_RESOURCES: managed, CODEX_SQLITE_HOME: path.join(state, 'codex-sqlite'),
+        OFFICECLI_SKIP_UPDATE: '1', OFFICECLI_WATCH_ALLOWED_HOSTS: 'thor-untrusted.invalid' }),
+    }));
+    owner.trackPort(port);
+    const headers = { 'X-Thor-Local-Token': token };
+    const channel = {
+      port,
+      trackPreviewPort: port => owner.trackPort(port),
+      async get(route, extraHeaders = {}) { owner.assertLive(); return http(port, route, { headers: { ...headers, ...extraHeaders } }); },
+      async post(route, payload) {
+        owner.assertLive();
+        const response = await http(port, route, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        assert.equal(response.status, 200, 'Core Office route returned an unexpected HTTP status.');
+        let result;
+        try { result = JSON.parse(response.text); } catch { throw new Error('Core Office route did not return JSON.'); }
+        assert.equal(result.success, true, 'Core Office route returned a failed envelope.');
+        return result.data;
+      },
+      async close() {
+        await owner.close({
+          requestParentExit: parent => new Promise((resolve, reject) => {
+            parent.stdin.once('error', reject); parent.stdin.end(resolve);
+          }),
+          requestCoreExit: core => { assert.equal(core.kill('SIGTERM'), true, 'Core graceful close could not be requested.'); },
+        });
+      },
+      cleanup: () => owner.cleanup(),
+    };
     const deadline = Date.now() + 90000;
     while (Date.now() < deadline) {
-      if (failed || child.exitCode !== null) throw new Error('Core exited before Office acceptance readiness.');
+      owner.assertLive();
       try { if ((await channel.get('/health')).status === 200) return channel; } catch {}
       await pause(100);
     }
     throw new Error('Core did not become ready for Office acceptance.');
-  } catch (error) { await channel.cleanup(); throw error; }
+  } catch (error) {
+    try { await owner.cleanup(); }
+    catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Core startup failed and preview cleanup is unproven.'); }
+    throw error;
+  }
 }
 
 function previewPort(url, document) {
@@ -262,18 +260,23 @@ export async function verifyOfficePreview(options) {
   await mkdir(options['state-root'], { recursive: true });
   const run = await mkdtemp(path.join(await realpath(options['state-root']), 'office-preview-'));
   const workspace = path.join(run, 'workspace');
-  const documents = await createSyntheticFixtures(executable, workspace);
+  // Register every possible resident path before the first create/add/validate
+  // command: a partial fixture failure must still close original and copy paths.
+  const cleanupPaths = plannedFixturePaths(workspace, formats);
+  let documents;
   const result = { schemaVersion: 1, synthetic: true, passed: false, coreSha256, officecliSha256: asset.sha256,
     coreApi: true, formats: [], errorCodes: {}, installedDesktop: false, visualFidelityTested: false };
   let core;
   const open = new Map();
-  try {
+  return runPreviewAcceptance({ result, verify: async () => {
+    documents = await createSyntheticFixtures(executable, workspace);
     core = await startCore(binary, managed, path.join(run, 'positive'), workspace);
     for (const document of documents) {
       const payload = { file_path: document.working, workspace };
       const started = await core.post(`/api/${document.route}-preview/start`, payload);
       assert.ok(!started.error, `Core preview start failed: ${started.error || 'unknown'}.`);
       const port = previewPort(started.url, document);
+      core.trackPreviewPort(port);
       open.set(document.format, { document, port });
       await requireHtml(port, document.baseline);
       const proxied = await core.get(started.url, { Origin: 'null', Referer: 'file:///synthetic-private-renderer/index.html' });
@@ -304,6 +307,7 @@ export async function verifyOfficePreview(options) {
       const started = await core.post(`/api/${document.route}-preview/start`, { file_path: document.working, workspace });
       assert.ok(!started.error);
       const port = previewPort(started.url, document);
+      core.trackPreviewPort(port);
       open.set(document.format, { document, port });
       await requireHtml(port, document.changed);
     }
@@ -335,16 +339,22 @@ export async function verifyOfficePreview(options) {
     assert.equal(digest(await readFile(executable)), asset.sha256, 'The verified input OfficeCLI changed.');
     assert.equal(digest(await readFile(binary)), coreSha256, 'The verified input Core changed.');
     result.verifiedInputBinariesUnchanged = true;
-    result.passed = true;
-    if (options.evidence) await writeFile(options.evidence, `${JSON.stringify(result, null, 2)}\n`, { flag: 'wx' });
-    return result;
-  } finally {
+  }, cleanup: [async () => {
+    const failures = [];
     if (core) {
-      for (const { document } of open.values()) await core.post(`/api/${document.route}-preview/stop`, { file_path: document.working }).catch(() => {});
-      await core.cleanup();
+      for (const { document } of open.values()) {
+        try { await core.post(`/api/${document.route}-preview/stop`, { file_path: document.working }); }
+        catch (error) { failures.push(error); }
+      }
+      try { await core.cleanup(); } catch (error) { failures.push(error); }
     }
-    for (const document of documents) await cli(executable, ['close', document.working], 'cleanup close').catch(() => {});
-  }
+    for (const { port } of open.values()) {
+      try { await requireClosed(port); } catch (error) { failures.push(error); }
+    }
+    if (failures.length) throw new AggregateError(failures, 'Final Core/preview cleanup failed.');
+    core = undefined; open.clear();
+  }, () => closeFixtureResidents(cleanupPaths, file => cli(executable, ['close', file], 'cleanup close'))], writeEvidence: options.evidence
+    ? final => writeFile(options.evidence, `${JSON.stringify(final, null, 2)}\n`, { flag: 'wx' }) : undefined });
 }
 
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {

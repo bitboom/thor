@@ -211,7 +211,8 @@ impl SessionRuntime {
     /// cleared → `Idle`) so the gate recovers in seconds on the `UserCancel`
     /// force-kill path, WITHOUT waiting for the workflow to finish naturally.
     /// It is emitted for a `UserCancelTimeout` kill BEFORE the process is torn
-    /// down, so the relay returns clean (a "cancelled", not a red crash card).
+    /// down, so the relay settles state without a crash card or a successful
+    /// completion notification. A restart/error drain is not labeled user cancel.
     fn emit_finish_once(&self) {
         let already = {
             let mut g = self.status.lock().unwrap_or_else(|e| e.into_inner());
@@ -226,6 +227,7 @@ impl SessionRuntime {
         }
         let _ = self.tx.send(AgentStreamEvent::Finish(FinishEventData {
             session_id: self.session_id(),
+            suppress_completion_notification: true,
         }));
     }
 }
@@ -4310,7 +4312,14 @@ fn translate_event(event: SessionEvent, conversation_id: &str, terminal_result_s
                     AgentSendError::from_agent_error(AgentError::bad_gateway(result_text)).into_stream_error();
                 return vec![AgentStreamEvent::Error(stream_error)];
             }
-            vec![AgentStreamEvent::Finish(FinishEventData::default())]
+            vec![AgentStreamEvent::Finish(FinishEventData {
+                suppress_completion_notification: is_error
+                    || matches!(
+                        outcome,
+                        aionui_session::TurnOutcome::Cancelled { .. } | aionui_session::TurnOutcome::Failed
+                    ),
+                ..Default::default()
+            })]
         }
         SessionEvent::Detached { exit, redacted_summary } => {
             // A process exit is only an ERROR when it is a genuine mid-turn crash.
@@ -5897,9 +5906,59 @@ mod translate_tests {
             "a cancelled turn must not emit an Error, got {events:?}"
         );
         assert!(
-            events.iter().any(|e| matches!(e, AgentStreamEvent::Finish(_))),
+            events
+                .iter()
+                .any(|e| matches!(e, AgentStreamEvent::Finish(data) if data.suppress_completion_notification)),
             "a cancelled turn still finishes"
         );
+    }
+
+    #[test]
+    fn known_non_success_finishes_suppress_notifications_and_normal_results_do_not() {
+        use aionui_session::{CancelReason, StopReason, TurnOutcome};
+        let cancelled = [
+            CancelReason::UserCancel,
+            CancelReason::BargeIn,
+            CancelReason::SocketAbort,
+            CancelReason::ToolDenyChain,
+        ]
+        .into_iter()
+        .flat_map(|reason| [false, true].map(|is_error| (TurnOutcome::Cancelled { reason }, is_error, true)));
+        for (outcome, is_error, suppress) in cancelled.chain([
+            (TurnOutcome::Failed, false, true),
+            (TurnOutcome::EndTurn, true, true), // no error text: still a Finish, not success
+            (TurnOutcome::EndTurn, false, false),
+            (
+                TurnOutcome::Completed {
+                    stop_reason: StopReason::EndTurn,
+                },
+                false,
+                false,
+            ),
+        ]) {
+            let events = translate_event(
+                SessionEvent::TurnResult {
+                    is_error,
+                    api_error_status: None,
+                    result_text: String::new(),
+                    epoch: 0,
+                    outcome,
+                },
+                "conv-notification",
+                false,
+            );
+            assert_eq!(events.len(), 1);
+            let AgentStreamEvent::Finish(data) = &events[0] else {
+                panic!("expected Finish, got {events:?}");
+            };
+            assert_eq!(data.suppress_completion_notification, suppress);
+            let wire = serde_json::to_value(&events[0]).unwrap();
+            assert_eq!(wire["type"], "finish");
+            assert_eq!(
+                wire["data"]["suppress_completion_notification"].as_bool(),
+                suppress.then_some(true)
+            );
+        }
     }
 
     // A genuine (non-cancel) error terminates as AgentStreamEvent::Error carrying the
@@ -7477,6 +7536,10 @@ mod pump_tests {
             Some("sid-xyz"),
             "resume anchor rides Finish"
         );
+        assert!(
+            !data.suppress_completion_notification,
+            "normal EndTurn still announces completion"
+        );
     }
 
     // THE FIX (stuck View-Steps spinner after interrupt): a tool call whose turn
@@ -7514,6 +7577,7 @@ mod pump_tests {
         let finish_pos = frames.iter().position(|f| matches!(f, AgentStreamEvent::Finish(_)));
         let canceled_pos = canceled_pos.expect("open tool call must be closed with a Canceled frame");
         let finish_pos = finish_pos.expect("cancelled turn still finishes");
+        assert!(matches!(&frames[finish_pos], AgentStreamEvent::Finish(data) if data.suppress_completion_notification));
         assert!(
             canceled_pos < finish_pos,
             "Canceled must precede Finish (relay breaks the turn on Finish)"
@@ -8926,6 +8990,11 @@ mod pump_tests {
             finish_count, 1,
             "the Interrupted drain settles the owed Finish exactly once, got {seq:?}"
         );
+        assert!(
+            frames
+                .iter()
+                .any(|frame| matches!(frame, AgentStreamEvent::Finish(data) if data.suppress_completion_notification))
+        );
         // "Last" among TURN frames: out-of-band WorkflowProgress settles (the
         // teardown/unknown-terminal bookkeeping added later) legitimately trail
         // the Finish — the relay is done with the turn and the out-of-turn
@@ -8951,6 +9020,54 @@ mod pump_tests {
             cancel_idx < finish_idx,
             "the Canceled tool close must precede the Finish (relay breaks at Finish), got {seq:?}"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn interrupted_errored_and_shutdown_workflow_drains_do_not_announce_success() {
+        use aionui_session::{SubagentKind, SubagentStatus, SubagentTaskKind};
+        for terminal in [
+            SubagentStatus::Interrupted,
+            SubagentStatus::Errored,
+            SubagentStatus::Shutdown,
+        ] {
+            let update = |status, kind| {
+                env(SessionEvent::SubagentUpdate {
+                    r#ref: "workflow-policy".into(),
+                    label: None,
+                    status,
+                    parent_ref: Some("tool-policy".into()),
+                    kind,
+                })
+            };
+            let frames = drain_script(vec![
+                env(SessionEvent::ToolCall {
+                    tool_use_id: "tool-policy".into(),
+                    name: "Task".into(),
+                    subagent: SubagentKind::Workflow,
+                    input: serde_json::Value::Null,
+                    parent_tool_use_id: None,
+                }),
+                update(SubagentStatus::Running, Some(SubagentTaskKind::WorkflowContainer)),
+                env(SessionEvent::TurnResult {
+                    is_error: false,
+                    api_error_status: None,
+                    result_text: String::new(),
+                    epoch: 0,
+                    outcome: aionui_session::TurnOutcome::EndTurn,
+                }),
+                update(terminal, None),
+            ])
+            .await;
+            let finishes: Vec<_> = frames
+                .iter()
+                .filter_map(|event| match event {
+                    AgentStreamEvent::Finish(data) => Some(data),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(finishes.len(), 1);
+            assert!(finishes[0].suppress_completion_notification);
+        }
     }
 
     // A background bash (`local_bash`, e.g. Bash{run_in_background}) is NOT a
@@ -10277,6 +10394,7 @@ mod force_kill_tests {
 
         // (a) clean Finish broadcast — NOT a crash Error.
         let terminal = next_terminal(&mut rx).await.expect("a terminal frame after kill");
+        assert!(matches!(&terminal, AgentStreamEvent::Finish(data) if data.suppress_completion_notification));
         assert!(
             matches!(terminal, AgentStreamEvent::Finish(_)),
             "kill must broadcast a clean Finish (not Error), got {terminal:?}"
@@ -10329,6 +10447,7 @@ mod force_kill_tests {
         inst.kill_and_wait(Some(AgentKillReason::RuntimeRestart)).await;
 
         let terminal = next_terminal(&mut rx).await.expect("a terminal frame after restart");
+        assert!(matches!(&terminal, AgentStreamEvent::Finish(data) if data.suppress_completion_notification));
         assert!(
             matches!(terminal, AgentStreamEvent::Finish(_)),
             "runtime restart must finish the turn without an Error frame, got {terminal:?}"

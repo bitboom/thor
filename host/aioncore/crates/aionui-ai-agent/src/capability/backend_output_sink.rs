@@ -135,9 +135,7 @@ impl OutputSink for BackendOutputSink {
         _cache_creation_tokens: u64,
         _cache_read_tokens: u64,
     ) {
-        let _ = self
-            .event_tx
-            .send(AgentStreamEvent::Finish(FinishEventData { session_id: None }));
+        let _ = self.event_tx.send(AgentStreamEvent::Finish(FinishEventData::default()));
     }
 
     fn emit_error(&self, msg: &str) {

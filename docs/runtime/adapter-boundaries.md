@@ -34,6 +34,13 @@ project-addressed file API. The result distinguishes independent headless
 operation from actual desktop UI interaction. A passing check does not claim an
 installed UI or a third-party agent was tested.
 
+Known cancelled/interrupted finish paths carry the optional Boolean
+`data.suppress_completion_notification` on `message.stream` finish frames.
+The desktop and WebUI suppress a response-completed notification only when the
+flag is exactly `true`; absent or false retains the earlier completion behavior.
+The flag does not change turn cleanup or identify the interruption cause. A
+cancel request returning HTTP 200 is not itself evidence of interruption.
+
 The source contracts are the custom-agent routes/service in
 `host/aioncore/crates/aionui-ai-agent/src/routes/agent.rs` and
 `src/services/custom.rs`, conversation routes/runtime in

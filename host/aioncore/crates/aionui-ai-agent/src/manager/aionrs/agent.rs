@@ -475,7 +475,7 @@ impl IAgentTask for AionrsAgentManager {
                 Err(send_error)
             }
             None => {
-                self.runtime.emit_finish(None);
+                self.runtime.emit_finish_without_notification(None);
                 Ok(())
             }
         };

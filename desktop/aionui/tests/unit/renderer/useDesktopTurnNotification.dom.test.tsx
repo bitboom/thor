@@ -50,6 +50,18 @@ beforeEach(() => {
 });
 
 describe('useDesktopTurnNotification', () => {
+  it('suppresses backend-marked finishes while still notifying normal finishes', () => {
+    renderHook(() => useDesktopTurnNotification());
+    emitStream({
+      type: 'finish',
+      conversation_id: 's1',
+      turn_id: 't1',
+      data: { suppress_completion_notification: true },
+    });
+    expect(showInvoke).not.toHaveBeenCalled();
+    emitStream({ type: 'finish', conversation_id: 's1', turn_id: 't2' });
+    expect(showInvoke).toHaveBeenCalledTimes(1);
+  });
   it('invokes the native notification on a finish stream message when unfocused', () => {
     renderHook(() => useDesktopTurnNotification());
     emitStream({ type: 'finish', conversation_id: 's1', turn_id: 't1' });

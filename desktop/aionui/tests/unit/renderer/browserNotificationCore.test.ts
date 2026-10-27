@@ -76,6 +76,47 @@ describe('createBrowserNotificationController.onStreamMessage', () => {
     expect(show).toHaveBeenCalledWith({ body: 'turnCompleted', conversationId: 'c1', kind: 'turnCompleted' });
   });
 
+  it('suppresses only backend-marked finishes and does not infer cancellation from other input', () => {
+    const { show, controller } = makeDeps();
+    controller.onStreamMessage({
+      type: 'finish',
+      conversation_id: 'c1',
+      turn_id: 'cancelled',
+      data: { suppress_completion_notification: true },
+    });
+    controller.onStreamMessage({
+      type: 'finish',
+      conversation_id: 'c1',
+      turn_id: 'ordinary',
+      data: { suppress_completion_notification: false },
+    });
+    controller.onStreamMessage({ type: 'finish', conversation_id: 'c1', turn_id: 'older' });
+    controller.onStreamMessage({
+      type: 'finish',
+      conversation_id: 'c1',
+      turn_id: 'malformed',
+      data: { suppress_completion_notification: 'true' },
+    });
+    expect(show).toHaveBeenCalledTimes(3);
+  });
+
+  it('remembers a suppressed turn across an unmarked replay without suppressing another conversation or confirmation', () => {
+    const { show, controller } = makeDeps();
+    controller.onStreamMessage({
+      type: 'finish',
+      conversation_id: 'c1',
+      turn_id: 't1',
+      data: { suppress_completion_notification: true },
+    });
+    controller.onStreamMessage({ type: 'finish', conversation_id: 'c1', turn_id: 't1' });
+    controller.onStreamMessage({ type: 'acp_permission', conversation_id: 'c1', msg_id: 'm1' });
+    controller.onStreamMessage({ type: 'finish', conversation_id: 'c2', turn_id: 't1' });
+    controller.onStreamMessage({ type: 'finish', conversation_id: 'c2', turn_id: 't1' });
+    expect(show).toHaveBeenCalledTimes(2);
+    expect(show).toHaveBeenNthCalledWith(1, { body: 'confirmation', conversationId: 'c1', kind: 'confirmation' });
+    expect(show).toHaveBeenNthCalledWith(2, { body: 'turnCompleted', conversationId: 'c2', kind: 'turnCompleted' });
+  });
+
   it('passes the conversation id to bodyFor so the body can name the conversation', () => {
     const { bodyFor, controller } = makeDeps();
     controller.onStreamMessage({ type: 'finish', conversation_id: 'c1', turn_id: 't1' });

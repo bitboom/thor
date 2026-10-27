@@ -1213,6 +1213,46 @@ mod tests {
         assert_eq!(content["content"], "Hello World");
     }
 
+    #[tokio::test]
+    async fn finish_notification_suppression_reaches_the_message_stream_without_changing_terminal_state() {
+        for suppress in [false, true] {
+            let repo = Arc::new(RecordingRepo::new());
+            let bus = Arc::new(aionui_realtime::BroadcastEventBus::new(64));
+            let mut ws = bus.subscribe();
+            let (tx, _) = broadcast::channel(8);
+            let rx = tx.subscribe();
+            let relay = StreamRelay::new(
+                "conv-policy".into(),
+                "asst-policy".into(),
+                "turn-policy".into(),
+                "user-policy".into(),
+                repo,
+                bus,
+            );
+            tx.send(AgentStreamEvent::Finish(FinishEventData {
+                session_id: Some("session-policy".into()),
+                suppress_completion_notification: suppress,
+            }))
+            .unwrap();
+            assert_eq!(relay.consume(rx).await.terminal, RelayTerminal::Finish);
+            let mut finishes = Vec::new();
+            while let Ok(event) = ws.try_recv() {
+                if event.name == "message.stream" && event.data["type"] == "finish" {
+                    finishes.push(event);
+                }
+            }
+            assert_eq!(finishes.len(), 1);
+            let data = &finishes[0].data;
+            assert_eq!(data["conversation_id"], "conv-policy");
+            assert_eq!(data["turn_id"], "turn-policy");
+            assert_eq!(data["data"]["session_id"], "session-policy");
+            assert_eq!(
+                data["data"]["suppress_completion_notification"].as_bool(),
+                suppress.then_some(true)
+            );
+        }
+    }
+
     fn agent_title_test_row(name: &str, name_source: Option<&str>) -> aionui_db::models::ConversationRow {
         let now = aionui_common::now_ms();
         aionui_db::models::ConversationRow {

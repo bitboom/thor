@@ -11,8 +11,9 @@ No enterprise endpoint, cookie, mail, or credential belongs in these directories
 
 Thor's local changes cover product/profile identity, the private desktop-to-Core
 channel, task recovery and update reservation, project memory, verified bundled
-OfficeCLI discovery, synthetic MCP setup, feedback review/redaction/readback and
-Windows packaging. The Windows compatibility patch also normalizes relative
+OfficeCLI discovery, synthetic MCP setup, feedback review/redaction/readback,
+completion-notification suppression for known interrupted turns, and Windows
+packaging. The Windows compatibility patch also normalizes relative
 file paths at the API boundary while preserving native absolute paths and Unix
 filenames. Platform-specific test fixtures must retain the original behavioral
 assertions; passing a source check does not establish installed acceptance.

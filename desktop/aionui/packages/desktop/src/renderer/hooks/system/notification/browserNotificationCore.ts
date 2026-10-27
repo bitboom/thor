@@ -81,6 +81,8 @@ export type BrowserNotificationDeps = {
  */
 export type StreamMessage = {
   type?: string;
+  /** Finish-event data is untrusted wire input and may be absent on older cores. */
+  data?: unknown;
   conversation_id?: string;
   turn_id?: string;
   /** Stable per-message id, used to dedup repeated confirmation frames
@@ -98,6 +100,9 @@ export const createBrowserNotificationController = (deps: BrowserNotificationDep
   // Track the last turn we actually notified for, so repeated finish events
   // for the same turn don't fire duplicate notifications.
   let lastNotifiedTurnId: string | null = null;
+  // A replay of the same terminal event must not turn a known suppressed
+  // finish into a completion notification if its metadata is missing.
+  const suppressedTurns = new Set<string>();
   // Confirmation frames we have already notified for (keyed by
   // conversation_id + msg_id), so a reconnect replay of the same request does
   // not fire a duplicate. Best-effort per controller lifetime, mirroring the
@@ -121,6 +126,21 @@ export const createBrowserNotificationController = (deps: BrowserNotificationDep
     }
 
     if (message.type === 'finish') {
+      const turnKey =
+        message.conversation_id && message.turn_id ? JSON.stringify([message.conversation_id, message.turn_id]) : null;
+      const data = message.data;
+      if (
+        data &&
+        typeof data === 'object' &&
+        (data as { suppress_completion_notification?: unknown }).suppress_completion_notification === true
+      ) {
+        if (turnKey) {
+          suppressedTurns.add(turnKey);
+          if (suppressedTurns.size > 256) suppressedTurns.delete(suppressedTurns.values().next().value!);
+        }
+        return;
+      }
+      if (turnKey && suppressedTurns.has(turnKey)) return;
       if (message.turn_id && message.turn_id === lastNotifiedTurnId) return;
       if (!deps.shouldShow()) return;
       lastNotifiedTurnId = message.turn_id ?? null;

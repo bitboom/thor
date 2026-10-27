@@ -67,7 +67,7 @@ fn emit_kill_terminal(
         Some(AgentKillReason::UserCancelTimeout | AgentKillReason::RuntimeRestart)
     ) {
         record_close_reason(CloseReason::UserCancel);
-        runtime.emit_finish(None);
+        runtime.emit_finish_without_notification(None);
     } else {
         let close_reason = CloseReason::Killed { reason };
         let message = close_reason.user_facing_message();
@@ -1511,7 +1511,7 @@ impl crate::agent_task::IAgentTask for AcpAgentManager {
                     source = "prompt_cancelled",
                     "ACP send_message cancelled"
                 );
-                self.runtime.emit_finish(Some(session_id));
+                self.runtime.emit_finish_without_notification(Some(session_id));
                 Ok(())
             }
             Ok(PromptOutcome::InfoTip { session_id, tips } | PromptOutcome::WarningTip { session_id, tips }) => {
@@ -1847,7 +1847,9 @@ mod tests {
 
         assert_eq!(recorded, Some(CloseReason::UserCancel));
         assert_eq!(runtime.status(), Some(ConversationStatus::Finished));
-        assert!(matches!(events.recv().await.unwrap(), AgentStreamEvent::Finish(_)));
+        assert!(
+            matches!(events.recv().await.unwrap(), AgentStreamEvent::Finish(data) if data.suppress_completion_notification)
+        );
     }
 
     #[tokio::test]

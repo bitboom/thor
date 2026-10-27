@@ -109,6 +109,16 @@ impl AgentRuntime {
     /// Atomic: set status ← Finished AND broadcast `Finish(session_id)`.
     /// Idempotent in the Finished absorbing state (no-op).
     pub fn emit_finish(&self, session_id: Option<String>) {
+        self.emit_finish_with_notification_policy(session_id, false);
+    }
+
+    /// Settle a known cancelled/interrupted turn without claiming successful
+    /// completion. The cause is deliberately not encoded as a user cancel.
+    pub fn emit_finish_without_notification(&self, session_id: Option<String>) {
+        self.emit_finish_with_notification_policy(session_id, true);
+    }
+
+    fn emit_finish_with_notification_policy(&self, session_id: Option<String>, suppress_completion_notification: bool) {
         let already_finished = {
             let mut guard = self.status.write().unwrap_or_else(|e| e.into_inner());
             let was_finished = matches!(*guard, Some(ConversationStatus::Finished));
@@ -120,9 +130,10 @@ impl AgentRuntime {
         if already_finished {
             return;
         }
-        let _ = self
-            .event_tx
-            .send(AgentStreamEvent::Finish(FinishEventData { session_id }));
+        let _ = self.event_tx.send(AgentStreamEvent::Finish(FinishEventData {
+            session_id,
+            suppress_completion_notification,
+        }));
     }
 
     /// Atomic: set status ← Finished AND broadcast `Error { message }`.
@@ -188,9 +199,26 @@ mod tests {
         match ev {
             AgentStreamEvent::Finish(data) => {
                 assert_eq!(data.session_id.as_deref(), Some("sess-1"));
+                assert!(!data.suppress_completion_notification);
             }
             other => panic!("expected Finish, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn suppressed_finish_settles_state_once_without_success_notification() {
+        let rt = runtime();
+        let mut rx = rt.subscribe();
+        rt.emit_finish_without_notification(Some("sess-cancel".into()));
+        assert_eq!(rt.status(), Some(ConversationStatus::Finished));
+        let AgentStreamEvent::Finish(data) = rx.recv().await.unwrap() else {
+            panic!("expected Finish");
+        };
+        assert!(data.suppress_completion_notification);
+        assert_eq!(data.session_id.as_deref(), Some("sess-cancel"));
+        rt.emit_finish(None);
+        rt.emit_finish_without_notification(None);
+        assert!(matches!(rx.try_recv(), Err(broadcast::error::TryRecvError::Empty)));
     }
 
     #[tokio::test]

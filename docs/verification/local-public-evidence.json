@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-10-27T20:08:19Z",
+  "recordedAt": "2026-10-27T20:30:16Z",
   "data": "synthetic-only",
   "installedDesktopVerified": false,
   "realCodexContinuity": {
@@ -103,6 +103,26 @@
     "Native UI helper currently returns codex app-server exited before returning response; Chrome binding returns Debugger unattached.",
     "No company mail, DRM, model or cookie skill was accessed."
   ],
+  "notificationAndPreviewVerification": {
+    "baseCommit": "9ead2134f4516af3c9289842c555daa23fde992d",
+    "issueUrl": "https://github.com/bitboom/thor/issues/5",
+    "scope": "Known interrupted Finish notification suppression and Office-preview verifier cleanup.",
+    "runtimeReleaseTestsPassed": 134,
+    "runtimeReleaseTestsFailed": 0,
+    "desktopTestsPassed": 5025,
+    "desktopTestsSkipped": 8,
+    "desktopTestsFailed": 0,
+    "desktopTypecheckPassed": true,
+    "desktopFormattingPassed": true,
+    "desktopLintErrors": 0,
+    "windowsGnuWorkspaceAllTargetsClippyPassed": true,
+    "rustFormattingPassed": true,
+    "independentSourceReviewPassed": true,
+    "actualCandidateModelAcceptanceRun": false,
+    "actualOsNotificationObserved": false,
+    "installedDesktopVerified": false,
+    "checksAgainstUncommittedChanges": true
+  },
   "verifierRepairVerification": {
     "baseCommit": "edc31959566a7349c6dccad24944a8422ef1b5ec",
     "scope": "Canonical URI fixture and fail-closed recovery/memory acceptance verifiers; no product runtime changes.",

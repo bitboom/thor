@@ -175,6 +175,14 @@ pub enum TipType {
 pub struct FinishEventData {
     #[serde(default)]
     pub session_id: Option<String>,
+    /// Settle turn state without announcing successful completion. This does
+    /// not classify the cause as user cancellation (e.g. a runtime restart).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub suppress_completion_notification: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// Kind of CodeBuddy ACP dialect signal absorbed by the tolerant transport
@@ -368,10 +376,34 @@ mod tests {
     fn finish_event_roundtrip() {
         let event = AgentStreamEvent::Finish(FinishEventData {
             session_id: Some("sess-abc".into()),
+            ..Default::default()
         });
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["type"], "finish");
         assert_eq!(json["data"]["session_id"], "sess-abc");
+        assert!(json["data"].get("suppress_completion_notification").is_none());
+    }
+
+    #[test]
+    fn finish_notification_policy_is_additive_and_survives_wire_roundtrip() {
+        for supplied in [None, Some(false), Some(true)] {
+            let mut wire = json!({"type": "finish", "data": {"session_id": "sess-cancel"}});
+            if let Some(value) = supplied {
+                wire["data"]["suppress_completion_notification"] = json!(value);
+            }
+            let parsed: AgentStreamEvent = serde_json::from_value(wire).unwrap();
+            let AgentStreamEvent::Finish(data) = &parsed else {
+                panic!("expected Finish");
+            };
+            assert_eq!(data.session_id.as_deref(), Some("sess-cancel"));
+            assert_eq!(data.suppress_completion_notification, supplied == Some(true));
+            let encoded = serde_json::to_value(parsed).unwrap();
+            assert_eq!(encoded["type"], "finish");
+            assert_eq!(
+                encoded["data"]["suppress_completion_notification"].as_bool(),
+                if supplied == Some(true) { Some(true) } else { None }
+            );
+        }
     }
 
     #[test]

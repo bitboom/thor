@@ -58,6 +58,18 @@ afterEach(() => {
 });
 
 describe('useBrowserNotification', () => {
+  it('suppresses backend-marked finishes while still notifying normal finishes', () => {
+    renderHook(() => useBrowserNotification());
+    emitStream({
+      type: 'finish',
+      conversation_id: 's1',
+      turn_id: 't1',
+      data: { suppress_completion_notification: true },
+    });
+    expect(FakeNotification.instances).toHaveLength(0);
+    emitStream({ type: 'finish', conversation_id: 's1', turn_id: 't2' });
+    expect(FakeNotification.instances).toHaveLength(1);
+  });
   it('shows a confirmation notification on an acp_permission stream message when hidden', () => {
     renderHook(() => useBrowserNotification());
     emitStream({ type: 'acp_permission', conversation_id: 'c1' });
