@@ -3146,10 +3146,19 @@ async fn create_team_without_workspace_uses_leader_auto_workspace_for_all_initia
 
     let got = svc.get_team("user1", &created.id).await.unwrap();
     assert!(!got.workspace.trim().is_empty(), "teams.workspace must be set");
+    let workspace = std::path::Path::new(&got.workspace);
     assert!(
-        got.workspace.contains("/conversations/acp-temp-"),
+        workspace
+            .parent()
+            .is_some_and(|parent| parent.ends_with("conversations")),
         "unexpected auto workspace: {}",
         got.workspace
+    );
+    let lead = got.assistants.iter().find(|agent| agent.role == "lead").unwrap();
+    let expected_leaf = format!("acp-temp-{}", lead.conversation_id);
+    assert_eq!(
+        workspace.file_name().and_then(|name| name.to_str()),
+        Some(expected_leaf.as_str())
     );
 
     for agent in &got.assistants {

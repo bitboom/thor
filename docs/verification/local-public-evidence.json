@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-10-27T17:38:05.068Z",
+  "recordedAt": "2026-10-27T18:13:05.546Z",
   "data": "synthetic-only",
   "installedDesktopVerified": false,
   "realCodexContinuity": {
@@ -55,24 +55,32 @@
     "bootstrapSucceeded": true,
     "reconstructedSourceCommit": "ab419fe7277ff23147583eeca05e06c0b2a39c59",
     "canonicalSourceSha256": "7f262c59c2b95c8a502f8af74cd952775f2cdc595943881d56e2ce6fff7e1d2a",
-    "windowsRunUrl": "https://github.com/bitboom/thor/actions/runs/40545798481",
-    "windowsSourceCommit": "235ddc9f19ef536ba40f0b288a56c17cd73da87f",
-    "runtimeTestsPassed": 103,
+    "windowsRunUrl": "https://github.com/bitboom/thor/actions/runs/40552652695",
+    "windowsSourceCommit": "895c32bc38b73015c4ba3753fd99663e79ee31cb",
+    "runtimeTestsPassed": 106,
     "windowsBuildSucceeded": false,
-    "failure": "The default-cwd test compared Git Bash path spelling with a native Windows path. A unique relative-file assertion replaces that comparison in the next candidate.",
+    "failure": "Extension import test searched for forward-slash skill storage text in a native Windows path. The corrected default-cwd case passed.",
     "releasePublished": false,
     "diagnosticSourceMustNotBeReleased": true,
     "windowsClippySucceeded": true,
-    "firstRustTestCrate": "aionui-ai-agent",
-    "rustTestsPassedBeforeStop": 974,
-    "rustTestsFailed": 1
+    "rustTestsPassedBeforeStop": 2156,
+    "rustTestsFailed": 1,
+    "rustFailureTarget": "aionui-app --test extension_e2e",
+    "rustTestsIgnoredBeforeStop": 12
   },
   "githubDefectTracking": {
     "issueUrl": "https://github.com/bitboom/thor/issues/1",
     "actualIssueCreatedAndReadBack": true,
     "submissionChannel": "connected GitHub integration",
     "installedAppFeedbackUiTested": false,
-    "subject": "Authenticate the private desktop Core channel before the first release."
+    "subject": "Authenticate the private desktop Core channel before the first release.",
+    "feedbackPathIssue": {
+      "issueUrl": "https://github.com/bitboom/thor/issues/2",
+      "fixCommit": "c49ce51d14831604f1014a3eb3400d853fd9f2da",
+      "actualIssueCreatedAndReadBack": true,
+      "syntheticInputsOnly": true,
+      "installedAppFeedbackUiTested": false
+    }
   },
   "limitations": [
     "No installed-app UI, automatic update, app feedback issue or release-loop acceptance yet.",
@@ -80,19 +88,15 @@
     "No company mail, DRM, model or cookie skill was accessed."
   ],
   "localCandidateVerification": {
-    "baseCommit": "235ddc9f19ef536ba40f0b288a56c17cd73da87f",
-    "scope": "Combined local candidate; MSVC execution and installed acceptance still pending.",
+    "baseCommit": "c49ce51d14831604f1014a3eb3400d853fd9f2da",
+    "scope": "Final local desktop checks plus separate exact-source MSVC results; full Core and installed acceptance remain pending.",
     "runtimeReleaseTestsPassed": 106,
     "desktopFullSuite": {
-      "passed": 5014,
+      "passed": 5019,
       "skipped": 8,
       "failed": 0,
       "passingFiles": 526,
       "skippedFiles": 1
-    },
-    "laterSilentWindowsUpdateChange": {
-      "focusedTestsPassed": 38,
-      "fullSuiteRepeated": false
     },
     "desktopTypecheckPassed": true,
     "desktopLintErrors": 0,
@@ -100,8 +104,11 @@
     "desktopI18nValidationPassed": true,
     "existingUntranslatedKeyWarnings": 5,
     "windowsGnuWorkspaceAllTargetsClippyPassed": true,
-    "newRustExecutableTestsRun": false,
+    "newRustExecutableTestsRun": true,
     "candidateCrashHarnessRun": false,
-    "installedDesktopVerified": false
+    "installedDesktopVerified": false,
+    "runtimeReleaseSourceCommit": "895c32bc38b73015c4ba3753fd99663e79ee31cb",
+    "desktopSourceCommit": "c49ce51d14831604f1014a3eb3400d853fd9f2da",
+    "fullRustWorkspaceSucceeded": false
   }
 }
