@@ -14,6 +14,9 @@ thiserror.workspace = true
 tracing.workspace = true
 rusqlite = { workspace = true, features = ["backup", "hooks"] }
 tempfile = "3"
-
-[dev-dependencies]
+sha2.workspace = true
 tokio.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+libsqlite3-sys = "=0.30.1"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }

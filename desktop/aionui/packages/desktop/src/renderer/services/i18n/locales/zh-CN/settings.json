@@ -1,4 +1,6 @@
 {
+  "databaseIdentityExport": "保存数据库身份诊断",
+  "databaseIdentityExportDescription": "在本地保存诊断，不包含文件路径或数据库内容，也不会随反馈发送。",
   "title": "设置",
   "skillsHub": {
     "title": "技能中心",

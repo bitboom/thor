@@ -11,6 +11,7 @@ use std::{
 };
 
 use chrono::Datelike;
+use tracing_subscriber::fmt::writer::{BoxMakeWriter, MakeWriter};
 use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use super::{BootstrapError, BootstrapErrorCode};
@@ -85,6 +86,23 @@ pub struct LogGuards {
 }
 
 const LOGGING_INIT_MESSAGE: &str = "failed to initialize logging";
+
+#[derive(Clone, Copy)]
+pub(crate) enum ConsoleOutput {
+    Stdout,
+    Stderr,
+}
+
+fn console_writer<O, E>(output: ConsoleOutput, stdout: O, stderr: E) -> BoxMakeWriter
+where
+    O: for<'a> MakeWriter<'a> + Send + Sync + 'static,
+    E: for<'a> MakeWriter<'a> + Send + Sync + 'static,
+{
+    match output {
+        ConsoleOutput::Stdout => BoxMakeWriter::new(stdout),
+        ConsoleOutput::Stderr => BoxMakeWriter::new(stderr),
+    }
+}
 
 /// Outcome of picking the log root: which root is active plus, when the
 /// requested custom directory was unusable, the details needed to report the
@@ -172,11 +190,23 @@ pub fn init_tracing(
     default_log_dir: &Path,
     log_level: Option<&str>,
 ) -> Result<LogGuards, BootstrapError> {
+    init_tracing_with_console(custom_log_dir, default_log_dir, log_level, ConsoleOutput::Stdout)
+}
+
+pub(crate) fn init_tracing_with_console(
+    custom_log_dir: Option<&Path>,
+    default_log_dir: &Path,
+    log_level: Option<&str>,
+    console: ConsoleOutput,
+) -> Result<LogGuards, BootstrapError> {
     let selection = select_log_root(custom_log_dir, default_log_dir)?;
     let log_dir = selection.root.as_path();
     let active_log_dir = selection.active_dir.as_path();
 
-    let console_layer = fmt::layer().with_target(true).with_filter(build_env_filter(log_level));
+    let console_layer = fmt::layer()
+        .with_writer(console_writer(console, io::stdout, io::stderr))
+        .with_target(true)
+        .with_filter(build_env_filter(log_level));
 
     // Backend file layer — excludes aion_* targets
     let file_appender = DailyDatedLogWriter::new(log_dir.to_path_buf(), "aioncore.log");
@@ -343,6 +373,90 @@ impl Write for DailyDatedLogWriter {
 mod tests {
     use super::*;
     use tracing::Level;
+
+    #[test]
+    fn selected_console_stream_keeps_real_info_events_and_file_output_separate_from_frames() {
+        use std::sync::{Arc, Mutex};
+        #[derive(Clone)]
+        struct Capture(Arc<Mutex<Vec<u8>>>);
+        impl Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        impl<'a> MakeWriter<'a> for Capture {
+            type Writer = Self;
+            fn make_writer(&'a self) -> Self::Writer {
+                self.clone()
+            }
+        }
+        for output in [ConsoleOutput::Stdout, ConsoleOutput::Stderr] {
+            let stdout = Capture(Arc::new(Mutex::new(Vec::new())));
+            let stderr = Capture(Arc::new(Mutex::new(Vec::new())));
+            let directory = tempfile::tempdir().unwrap();
+            let (file_writer, file_guard) = tracing_appender::non_blocking(DailyDatedLogWriter::new(
+                directory.path().to_path_buf(),
+                "aioncore.log",
+            ));
+            let console = fmt::layer()
+                .with_ansi(false)
+                .with_target(true)
+                .with_writer(console_writer(output, stdout.clone(), stderr.clone()))
+                .with_filter(build_env_filter(Some("info")));
+            let file = fmt::layer()
+                .json()
+                .with_ansi(false)
+                .with_target(true)
+                .with_writer(file_writer)
+                .with_filter(build_backend_filter(Some("info")));
+            let subscriber = tracing_subscriber::registry().with(console).with(file);
+            let mut machine = Vec::new();
+            let generation = uuid::Uuid::parse_str("00112233-4455-4677-8899-aabbccddeeff").unwrap();
+            let mut emit = |phase| {
+                let frame = super::super::database_identity::encode_frame(
+                    1,
+                    generation,
+                    phase,
+                    aionui_db::DatabaseIdentityObservation::Identified {
+                        fingerprint: "a".repeat(64),
+                    },
+                )
+                .unwrap();
+                super::super::database_identity::write_frame(&mut machine, &frame).unwrap();
+            };
+            tracing::subscriber::with_default(subscriber, || {
+                tracing::info!("owned normal info before");
+                emit(aionui_db::DatabaseIdentityPhase::Bootstrap);
+                tracing::info!("owned normal info between");
+                emit(aionui_db::DatabaseIdentityPhase::Business);
+                tracing::info!("owned normal info after");
+            });
+            drop(file_guard);
+            let stdout = stdout.0.lock().unwrap();
+            let stderr = stderr.0.lock().unwrap();
+            let (active, inactive) = match output {
+                ConsoleOutput::Stdout => (&*stdout, &*stderr),
+                ConsoleOutput::Stderr => (&*stderr, &*stdout),
+            };
+            assert!(inactive.is_empty());
+            let file = std::fs::read(dated_log_file_path(directory.path(), LogDate::today(), "aioncore.log")).unwrap();
+            for marker in [
+                "owned normal info before",
+                "owned normal info between",
+                "owned normal info after",
+            ] {
+                assert!(String::from_utf8_lossy(active).contains(marker));
+                assert!(String::from_utf8_lossy(&file).contains(marker));
+            }
+            assert!(!active.contains(&0x1e));
+            assert!(!file.contains(&0x1e));
+            assert_eq!(machine.iter().filter(|&&byte| byte == 0x1e).count(), 2);
+        }
+    }
 
     #[test]
     fn env_filter_suppresses_raw_acp_sdk_jsonrpc_debug_even_when_debug_enabled() {

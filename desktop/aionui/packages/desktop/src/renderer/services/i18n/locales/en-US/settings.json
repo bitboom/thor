@@ -1,4 +1,6 @@
 {
+  "databaseIdentityExport": "Save database identity diagnostic",
+  "databaseIdentityExportDescription": "Saves a local diagnostic without file paths or database contents. It is not sent with feedback.",
   "title": "Settings",
   "skillsHub": {
     "title": "Skills Hub",

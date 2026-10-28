@@ -208,6 +208,26 @@ export const InstallationIntegrityFooter: React.FC<{
 
   return (
     <Space>
+      {window.electronAPI?.exportThorDatabaseIdentity ? (
+        <span className='text-t-secondary'>{t('settings.databaseIdentityExportDescription')}</span>
+      ) : null}
+      {window.electronAPI?.exportThorDatabaseIdentity ? (
+        <Button
+          title={t('settings.databaseIdentityExportDescription')}
+          data-testid='export-database-identity'
+          onClick={async () => {
+            try {
+              const result = await window.electronAPI?.exportThorDatabaseIdentity?.();
+              if (result === 'saved') Message.success(t('common.saveSuccess'));
+              else if (result && result !== 'cancelled') Message.error(t('common.saveFailed'));
+            } catch {
+              Message.error(t('common.saveFailed'));
+            }
+          }}
+        >
+          {t('settings.databaseIdentityExport')}
+        </Button>
+      ) : null}
       {actions.reportText ? (
         <Button
           data-testid='installation-integrity-report'

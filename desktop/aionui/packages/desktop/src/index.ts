@@ -16,15 +16,18 @@ import { captureBackendStartupFailure } from './sentry';
 // Thor does not initialize upstream telemetry.
 
 import './process/utils/configureConsoleLog';
-import { app, BrowserWindow, ipcMain, nativeImage, powerMonitor, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, powerMonitor, session } from 'electron';
 import fixPath from 'fix-path';
 import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'node:url';
 import {
   coreRequestHeaders,
+  createIdentityExporter,
   installCoreMainFetch,
   isTrustedDevDocument,
+  trustedIdentitySender,
+  writeIdentityExclusive,
   trustedCoreRequest,
 } from './process/startup/coreTransport';
 import { initMainAdapterWithWindow } from './common/adapter/main';
@@ -262,6 +265,34 @@ ipcMain.on('get-backend-startup-failed', (event) => {
 
 ipcMain.on('get-backend-startup-failure', (event) => {
   event.returnValue = backendStartupFailureInfo;
+});
+
+const exportDatabaseIdentity = createIdentityExporter({
+  snapshot: () => backendManager.getDatabaseIdentitySnapshot(),
+  appVersion: () => app.getVersion(),
+  choose: async () => {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: 'thor-database-identity.json',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    return result.canceled ? null : (result.filePath ?? null);
+  },
+  write: writeIdentityExclusive,
+});
+ipcMain.handle('thor:export-database-identity', async (event, ...args: unknown[]) => {
+  const trusted = () => {
+    const documents = [pathToFileURL(path.join(__dirname, '../renderer/index.html')).href];
+    if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL && isTrustedDevDocument(process.env.ELECTRON_RENDERER_URL))
+      documents.push(process.env.ELECTRON_RENDERER_URL);
+    return trustedIdentitySender({
+      currentWindow: !!mainWindow && !mainWindow.isDestroyed(),
+      currentSender: !!mainWindow && !event.sender.isDestroyed() && event.sender === mainWindow.webContents,
+      mainFrame: !!event.senderFrame && event.senderFrame === event.sender.mainFrame,
+      frameUrl: event.senderFrame?.url,
+      trustedDocuments: documents,
+    });
+  };
+  return exportDatabaseIdentity(trusted, args);
 });
 
 ipcMain.handle('backend:recover-corrupted-database', async () => {

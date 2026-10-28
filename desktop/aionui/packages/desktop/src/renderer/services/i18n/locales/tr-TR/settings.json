@@ -1,4 +1,6 @@
 {
+  "databaseIdentityExport": "Veritabanı kimlik tanılamasını kaydet",
+  "databaseIdentityExportDescription": "Dosya yolları veya veritabanı içeriği olmadan yerel bir tanılama kaydeder. Geri bildirimle gönderilmez.",
   "title": "Ayarlar",
   "skillsHub": {
     "title": "Beceri Merkezi",

@@ -118,7 +118,12 @@ async fn async_main(
         Some(Command::Secret(ref args)) => Ok(commands::run_secret(&cli, args).await?),
         Some(Command::PrepareManagedResources(args)) => Ok(commands::run_prepare_managed_resources(args).await?),
         None => {
-            let mut env = bootstrap::init_environment(&cli, &merged_path)?;
+            let database_observer = bootstrap::observer_for_cli(&cli);
+            let mut env = if database_observer.is_some() {
+                bootstrap::init_environment_with_console(&cli, &merged_path, bootstrap::ConsoleOutput::Stderr)?
+            } else {
+                bootstrap::init_environment(&cli, &merged_path)?
+            };
             env.config.local_channel = local_channel;
 
             // Acquire the data-dir process-level guard before binding a port or
@@ -175,7 +180,11 @@ async fn async_main(
             };
 
             let listener = commands::bind_http_listener(&mut env.config).await?;
-            let database = bootstrap::init_data_layer(&env.config).await?;
+            let database = if let Some(observer) = database_observer.as_ref() {
+                bootstrap::init_data_layer_observed(&env.config, Some(observer)).await?
+            } else {
+                bootstrap::init_data_layer(&env.config).await?
+            };
             let services = AppServices::from_config(database, &env.config).await.map_err(|error| {
                 bootstrap::BootstrapError::new(
                     bootstrap::BootstrapErrorCode::ServiceInitFailed,

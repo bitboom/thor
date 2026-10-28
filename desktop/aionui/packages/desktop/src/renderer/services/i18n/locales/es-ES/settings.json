@@ -1,4 +1,6 @@
 {
+  "databaseIdentityExport": "Guardar diagnóstico de identidad de la base de datos",
+  "databaseIdentityExportDescription": "Guarda un diagnóstico local sin rutas de archivos ni contenido de la base de datos. No se envía con comentarios.",
   "title": "Configuración",
   "skillsHub": {
     "title": "Centro de habilidades",

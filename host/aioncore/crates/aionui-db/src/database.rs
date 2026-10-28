@@ -10,6 +10,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode};
 use sqlx::{Sqlite, SqlitePool};
 use tracing::{info, warn};
 
+use crate::database_identity::{DatabaseIdentityObserver, DatabaseIdentityPhase};
 use crate::error::DbError;
 
 /// Maximum number of connections in the pool.
@@ -125,6 +126,21 @@ pub async fn init_database_staged_with_options(
     path: &Path,
     options: DatabaseInitOptions,
 ) -> Result<Database, DatabaseInitError> {
+    init_database_staged_with_observer(path, options, None).await
+}
+
+/// Separate opt-in diagnostic seam. Existing/default/in-memory APIs emit no identity.
+/// Explicit recovery ignores the observer, including every recovery retry.
+pub async fn init_database_staged_with_observer(
+    path: &Path,
+    options: DatabaseInitOptions,
+    observer: Option<&DatabaseIdentityObserver>,
+) -> Result<Database, DatabaseInitError> {
+    let observer = if options.recover_corrupted_database {
+        None
+    } else {
+        observer
+    };
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
@@ -136,7 +152,7 @@ pub async fn init_database_staged_with_options(
         })?;
     }
 
-    match try_init_file_staged(path).await {
+    match try_init_file_staged(path, observer).await {
         Ok(db) => Ok(db),
         Err(e) if path.exists() && options.recover_corrupted_database && should_attempt_recovery(e.source()) => {
             warn!(
@@ -186,7 +202,10 @@ pub async fn init_database_memory() -> Result<Database, DbError> {
     Ok(Database { pool })
 }
 
-async fn try_init_file_staged(path: &Path) -> Result<Database, DatabaseInitError> {
+async fn try_init_file_staged(
+    path: &Path,
+    observer: Option<&DatabaseIdentityObserver>,
+) -> Result<Database, DatabaseInitError> {
     // Serialize the whole file-backed startup path, not only the sqlx
     // migrator. Opening a fresh SQLite file also runs connection-level PRAGMAs
     // such as WAL setup, which can race before migrations start.
@@ -215,6 +234,10 @@ async fn try_init_file_staged(path: &Path) -> Result<Database, DatabaseInitError
         .await
         .map_err(|e| DatabaseInitError::new("database.open", DbError::Query(e)))?;
 
+    if let Some(observer) = observer {
+        observer.observe(DatabaseIdentityPhase::Bootstrap, &pool).await;
+    }
+
     run_migrations_staged(&pool).await?;
 
     // Discard the bootstrap pool and reconnect on a FRESH pool before any
@@ -234,6 +257,10 @@ async fn try_init_file_staged(path: &Path) -> Result<Database, DatabaseInitError
         .connect_with(opts)
         .await
         .map_err(|e| DatabaseInitError::new("database.reopen", DbError::Query(e)))?;
+
+    if let Some(observer) = observer {
+        observer.observe(DatabaseIdentityPhase::Business, &pool).await;
+    }
 
     ensure_system_user(&pool)
         .await
@@ -634,7 +661,7 @@ async fn recover_and_retry(path: &Path, original_error: DbError) -> Result<Datab
         )
     })?;
 
-    match try_init_file_staged(path).await {
+    match try_init_file_staged(path, None).await {
         Ok(db) => {
             warn!(
                 code = "BOOTSTRAP_RECOVERED_DATABASE_CORRUPTION",

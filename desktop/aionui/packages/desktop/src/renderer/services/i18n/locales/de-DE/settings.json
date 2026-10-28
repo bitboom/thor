@@ -1,4 +1,6 @@
 {
+  "databaseIdentityExport": "Datenbankidentitätsdiagnose speichern",
+  "databaseIdentityExportDescription": "Speichert eine lokale Diagnose ohne Dateipfade oder Datenbankinhalte. Sie wird nicht mit Feedback gesendet.",
   "title": "Einstellungen",
   "skillsHub": {
     "title": "Skills-Hub",

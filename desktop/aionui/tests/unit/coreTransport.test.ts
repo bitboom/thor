@@ -1,11 +1,115 @@
 import { describe, expect, it, vi } from 'vitest';
+import { mkdtemp, readFile, rmdir, unlink, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { DatabaseIdentityCapture } from '../../packages/web-host/src/database-identity';
 import {
   coreRequestHeaders,
+  createIdentityExporter,
   installCoreMainFetch,
   isCoreTarget,
   isTrustedDevDocument,
   trustedCoreRequest,
+  trustedIdentitySender,
+  writeIdentityExclusive,
 } from '@/process/startup/coreTransport';
+
+describe('local identity export', () => {
+  it('never overwrites an existing selected file', async () => {
+    const directory = await mkdtemp(path.join(process.cwd(), '.identity-test-'));
+    const target = path.join(directory, 'diagnostic.json');
+    try {
+      await writeFile(target, 'existing');
+      await expect(writeIdentityExclusive(target, 'replacement')).rejects.toMatchObject({ code: 'EEXIST' });
+      expect(await readFile(target, 'utf8')).toBe('existing');
+    } finally {
+      await unlink(target);
+      await rmdir(directory);
+    }
+  });
+  it('accepts only the current trusted main document', () => {
+    const trustedDocuments = ['file:///C:/thor/renderer/index.html'];
+    const state = {
+      currentWindow: true,
+      currentSender: true,
+      mainFrame: true,
+      frameUrl: `${trustedDocuments[0]}#/settings`,
+      trustedDocuments,
+    };
+    expect(trustedIdentitySender(state)).toBe(true);
+    expect(trustedIdentitySender({ ...state, currentSender: false })).toBe(false);
+    expect(trustedIdentitySender({ ...state, mainFrame: false })).toBe(false);
+    expect(trustedIdentitySender({ ...state, frameUrl: 'https://example.com/' })).toBe(false);
+    expect(trustedIdentitySender({ ...state, currentWindow: false })).toBe(false);
+  });
+  it('captures the attempt before the dialog and rejects concurrent or renderer arguments', async () => {
+    let finish!: (path: string | null) => void;
+    const capture = new DatabaseIdentityCapture(42, 1);
+    capture.consume(
+      Buffer.from(
+        `\x1eAIONCORE_DB_IDENTITY_V1 ${JSON.stringify({ v: 1, pid: 42, generation: '00112233-4455-4677-8899-aabbccddeeff', phase: 'bootstrap', ordinal: 0, status: 'unavailable', fingerprint: null, reason: 'unsupported_platform', sqliteCode: null, win32Code: null })}\n`
+      ),
+      () => {}
+    );
+    let snapshot = { ...capture.snapshot(), untrustedExtra: 'never-export' };
+    const write = vi.fn().mockResolvedValue(undefined);
+    const exportIdentity = createIdentityExporter({
+      snapshot: () => snapshot,
+      appVersion: () => 'test',
+      choose: () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      write,
+    });
+    expect(await exportIdentity(() => false, [])).toBe('failed');
+    expect(await exportIdentity(() => true, ['injected'])).toBe('failed');
+    const pending = exportIdentity(() => true, []);
+    expect(await exportIdentity(() => true, [])).toBe('busy');
+    snapshot = { ...new DatabaseIdentityCapture(42, 2).snapshot(), untrustedExtra: 'never-export' };
+    finish('owned-test-target');
+    expect(await pending).toBe('saved');
+    expect(JSON.parse(write.mock.calls[0][1])).toMatchObject({ attemptOrdinal: 1, records: [{ ordinal: 0 }] });
+    expect(write.mock.calls[0][1]).not.toContain('never-export');
+  });
+  it('does not write after cancellation or a stale sender', async () => {
+    const write = vi.fn();
+    const cancelled = createIdentityExporter({
+      snapshot: () => new DatabaseIdentityCapture(42, 1).snapshot(),
+      appVersion: () => 'test',
+      choose: async () => null,
+      write,
+    });
+    expect(await cancelled(() => true, [])).toBe('cancelled');
+    let trusted = true;
+    const stale = createIdentityExporter({
+      snapshot: () => new DatabaseIdentityCapture(42, 1).snapshot(),
+      appVersion: () => 'test',
+      choose: async () => {
+        trusted = false;
+        return 'target';
+      },
+      write,
+    });
+    expect(await stale(() => trusted, [])).toBe('failed');
+    expect(write).not.toHaveBeenCalled();
+  });
+  it('returns a closed failure when sender or snapshot access throws', async () => {
+    const exportIdentity = createIdentityExporter({
+      snapshot: () => {
+        throw new Error('private error');
+      },
+      appVersion: () => 'test',
+      choose: async () => null,
+      write: async () => {},
+    });
+    expect(
+      await exportIdentity(() => {
+        throw new Error('private sender');
+      }, [])
+    ).toBe('failed');
+    expect(await exportIdentity(() => true, [])).toBe('failed');
+  });
+});
 
 describe('Thor local Core capability transport', () => {
   it('trusts a development document only on an explicit loopback HTTP origin', () => {

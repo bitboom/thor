@@ -1,3 +1,6 @@
+import { writeFile } from 'node:fs/promises';
+import type { BackendLifecycleManager } from '@aionui/web-host';
+
 /** Desktop-only authentication for the owned Core process. */
 export function isCoreTarget(raw: string, port: number | undefined): boolean {
   if (!port || !Number.isInteger(port) || port < 1 || port > 65535) return false;
@@ -15,7 +18,7 @@ export function isCoreTarget(raw: string, port: number | undefined): boolean {
   }
 }
 
-function sameDocument(raw: string, expected: string): boolean {
+export function sameDocument(raw: string, expected: string): boolean {
   try {
     const a = new URL(raw);
     const b = new URL(expected);
@@ -23,6 +26,80 @@ function sameDocument(raw: string, expected: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function trustedIdentitySender(input: {
+  currentWindow: boolean;
+  currentSender: boolean;
+  mainFrame: boolean;
+  frameUrl?: string;
+  trustedDocuments: string[];
+}): boolean {
+  return (
+    input.currentWindow &&
+    input.currentSender &&
+    input.mainFrame &&
+    !!input.frameUrl &&
+    input.trustedDocuments.some((document) => sameDocument(input.frameUrl!, document))
+  );
+}
+
+export function writeIdentityExclusive(filePath: string, payload: string): Promise<void> {
+  return writeFile(filePath, payload, { flag: 'wx', mode: 0o600 });
+}
+
+export function createIdentityExporter(options: {
+  snapshot: () => ReturnType<BackendLifecycleManager['getDatabaseIdentitySnapshot']>;
+  appVersion: () => string;
+  choose: () => Promise<string | null>;
+  write: (path: string, data: string) => Promise<void>;
+}) {
+  let busy = false;
+  return async (trusted: () => boolean, args: unknown[]) => {
+    let acquired = false;
+    try {
+      if (args.length || !trusted()) return 'failed' as const;
+      if (busy) return 'busy' as const;
+      const snapshot = options.snapshot();
+      if (!snapshot) return 'unavailable' as const;
+      const payload = JSON.stringify({
+        schemaVersion: 1,
+        kind: 'thor.database-identity',
+        appVersion: options.appVersion().slice(0, 128) || 'unknown',
+        capturedAt: new Date().toISOString(),
+        attemptOrdinal: snapshot.attemptOrdinal,
+        corePid: snapshot.corePid,
+        generation: snapshot.generation,
+        captureState: snapshot.captureState,
+        lifecycleState: snapshot.lifecycleState,
+        readyObserved: snapshot.readyObserved,
+        records: snapshot.records.map((r) => ({
+          v: r.v,
+          pid: r.pid,
+          generation: r.generation,
+          phase: r.phase,
+          ordinal: r.ordinal,
+          status: r.status,
+          fingerprint: r.fingerprint,
+          reason: r.reason,
+          sqliteCode: r.sqliteCode,
+          win32Code: r.win32Code,
+        })),
+      });
+      if (Buffer.byteLength(payload) > 4096) return 'failed' as const;
+      busy = true;
+      acquired = true;
+      const selected = await options.choose();
+      if (!trusted()) return 'failed' as const;
+      if (!selected) return 'cancelled' as const;
+      await options.write(selected, payload);
+      return 'saved' as const;
+    } catch {
+      return 'failed' as const;
+    } finally {
+      if (acquired) busy = false;
+    }
+  };
 }
 
 export function isTrustedDevDocument(raw: string): boolean {

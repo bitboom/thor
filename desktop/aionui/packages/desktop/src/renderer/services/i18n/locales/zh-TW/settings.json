@@ -1,4 +1,6 @@
 {
+  "databaseIdentityExport": "儲存資料庫識別診斷",
+  "databaseIdentityExportDescription": "在本機儲存診斷，不含檔案路徑或資料庫內容，也不會隨意見回饋傳送。",
   "title": "Settings",
   "skillsHub": {
     "title": "技能中心",

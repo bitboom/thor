@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Modal } from '@arco-design/web-react';
+import { Message, Modal } from '@arco-design/web-react';
+import '@arco-design/web-react/lib/_util/react-19-adapter';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
@@ -74,6 +75,17 @@ beforeEach(() => {
 });
 
 describe('startup failure feedback', () => {
+  it('exports locally from the failure footer without opening feedback or recovery', async () => {
+    const save = vi.fn().mockResolvedValue('saved');
+    (window as unknown as { electronAPI: unknown }).electronAPI = { exportThorDatabaseIdentity: save };
+    render(<InstallationIntegrityFooter diagnosticsKind='backend_exited' />);
+    fireEvent.click(screen.getByTestId('export-database-identity'));
+    expect(save).toHaveBeenCalledWith();
+    expect(screen.queryByTestId('recoverable-database-corruption-rebuild')).toBeNull();
+    await screen.findByText('common.saveSuccess');
+    Message.clear();
+    await waitFor(() => expect(screen.queryByText('common.saveSuccess')).toBeNull());
+  });
   it('opens a reviewable draft without exposing arbitrary startup details or submitting', async () => {
     const submit = vi.fn();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Core unavailable'));

@@ -1963,6 +1963,8 @@ export type I18nKey =
   | 'settings.customOpenAI'
   | 'settings.customSkills'
   | 'settings.darkMode'
+  | 'settings.databaseIdentityExport'
+  | 'settings.databaseIdentityExportDescription'
   | 'settings.deleteAllModelConfirm'
   | 'settings.deleteAssistantConfirm'
   | 'settings.deleteAssistantTitle'

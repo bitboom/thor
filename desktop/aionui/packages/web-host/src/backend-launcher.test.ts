@@ -8,6 +8,142 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
 import type { Socket } from 'node:net';
+import { DatabaseIdentityCapture } from './database-identity.js';
+
+describe('database identity stdout isolation', () => {
+  const record = (phase: 'bootstrap' | 'business') => ({
+    v: 1,
+    pid: 42,
+    generation: '00112233-4455-4677-8899-aabbccddeeff',
+    phase,
+    ordinal: phase === 'bootstrap' ? 0 : 1,
+    status: 'identified',
+    fingerprint: 'a'.repeat(64),
+    reason: null,
+    sqliteCode: null,
+    win32Code: null,
+  });
+  const frame = (phase: 'bootstrap' | 'business') =>
+    Buffer.from(`\x1eAIONCORE_DB_IDENTITY_V1 ${JSON.stringify(record(phase))}\n`);
+  it('accepts each split while never forwarding a frame or later ordinary output', () => {
+    const bytes = frame('bootstrap');
+    for (let split = 0; split <= bytes.length; split += 1) {
+      const capture = new DatabaseIdentityCapture(42, 1);
+      const forwarded: string[] = [];
+      const sink = (line: string, forward: boolean) => {
+        if (forward) forwarded.push(line);
+      };
+      capture.consume(bytes.subarray(0, split), sink);
+      capture.consume(bytes.subarray(split), sink);
+      expect(capture.snapshot().captureState).toBe('partial');
+      capture.consume(Buffer.from('ordinary\nAIONCORE_READY\n'), sink);
+      expect(forwarded).toEqual([]);
+      expect(capture.snapshot().captureState).toBe('invalid');
+    }
+  });
+  it('retains both phases and accepts clean readiness after quarantine', () => {
+    const capture = new DatabaseIdentityCapture(42, 1);
+    const lines: string[] = [];
+    capture.consume(
+      Buffer.concat([frame('bootstrap'), frame('business'), Buffer.from('AIONCORE_READY\r\n')]),
+      (line, forward) => {
+        if (!forward) lines.push(line);
+      }
+    );
+    expect(lines).toEqual(['AIONCORE_READY']);
+    expect(capture.snapshot().captureState).toBe('complete');
+  });
+  it('invalidates duplicates, wrong PIDs and oversized reserved frames without forwarding', () => {
+    for (const [input, pid] of [
+      [Buffer.concat([frame('bootstrap'), frame('bootstrap')]), 42],
+      [frame('bootstrap'), 43],
+      [Buffer.from(`\x1e${'x'.repeat(9000)}\n`), 42],
+    ] as const) {
+      const capture = new DatabaseIdentityCapture(pid, 1);
+      const sink = vi.fn();
+      capture.consume(input, sink);
+      expect(capture.snapshot().captureState).toBe('invalid');
+      expect(sink).not.toHaveBeenCalled();
+    }
+  });
+  it('finalizes after drain and ignores later bytes', () => {
+    const capture = new DatabaseIdentityCapture(42, 1);
+    capture.exit();
+    capture.close();
+    capture.consume(frame('bootstrap'), () => {});
+    expect(capture.snapshot()).toMatchObject({ lifecycleState: 'closed', captureState: 'not_observed' });
+  });
+  it('stops accepting records after the bounded drain timeout', () => {
+    vi.useFakeTimers();
+    try {
+      const capture = new DatabaseIdentityCapture(42, 1);
+      capture.exit();
+      vi.advanceTimersByTime(1000);
+      capture.consume(frame('bootstrap'), () => {});
+      expect(capture.snapshot()).toMatchObject({ lifecycleState: 'drain_timeout', captureState: 'not_observed' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('keeps legacy events after an overflow while suppressing every quarantined fragment', () => {
+    const capture = new DatabaseIdentityCapture(42, 1);
+    const lines: Array<[string, boolean]> = [];
+    const input = Buffer.concat([
+      Buffer.from('x'.repeat(8193)),
+      Buffer.from('\x1eleak\n'),
+      Buffer.from('orphan-sensitive\nAIONCORE_LISTENING {"host":"127.0.0.1","port":1234}\nAIONCORE_READY\n'),
+    ]);
+    for (const byte of input) capture.consume(Buffer.from([byte]), (line, forward) => lines.push([line, forward]));
+    expect(lines).toEqual([
+      ['AIONCORE_LISTENING {"port":1234}', false],
+      ['AIONCORE_READY', false],
+    ]);
+    expect(capture.snapshot().captureState).toBe('invalid');
+  });
+  it('rejects duplicate keys and truncated frames while keeping observations independent', () => {
+    const valid = frame('bootstrap').toString();
+    const duplicate = valid.replace('"v":1', '"v":1,"v":1');
+    const capture = new DatabaseIdentityCapture(42, 1);
+    capture.consume(Buffer.from(duplicate), () => {});
+    expect(capture.snapshot().captureState).toBe('invalid');
+    const second = new DatabaseIdentityCapture(42, 2);
+    second.consume(frame('bootstrap').subarray(0, 40), () => {});
+    second.close();
+    expect(second.snapshot().captureState).toBe('invalid');
+  });
+  it('rejects malformed UTF-8, unknown fields, mismatched generations and reordered phases', () => {
+    const badUtf8 = Buffer.concat([Buffer.from('\x1eAIONCORE_DB_IDENTITY_V1 '), Buffer.from([0xff, 10])]);
+    const extra = Buffer.from(
+      `\x1eAIONCORE_DB_IDENTITY_V1 ${JSON.stringify({ ...record('bootstrap'), unexpected: 'x' })}\n`
+    );
+    const wrongGeneration = Buffer.from(
+      `\x1eAIONCORE_DB_IDENTITY_V1 ${JSON.stringify({ ...record('business'), generation: '11112233-4455-4677-8899-aabbccddeeff' })}\n`
+    );
+    for (const input of [
+      badUtf8,
+      extra,
+      Buffer.concat([frame('bootstrap'), wrongGeneration]),
+      Buffer.concat([frame('business'), frame('bootstrap')]),
+    ]) {
+      const capture = new DatabaseIdentityCapture(42, 1);
+      capture.consume(input, () => {});
+      expect(capture.snapshot().captureState).toBe('invalid');
+    }
+  });
+  it('accepts only the exact managed listening fields after quarantine', () => {
+    for (const marker of [
+      '{"host":"127.0.0.1","port":1234,"orphan":"secret"}',
+      '{"host":"127.0.0.1","port":1234,"port":1234}',
+      '{"host":"example.org","port":1234}',
+    ]) {
+      const capture = new DatabaseIdentityCapture(42, 1);
+      const sink = vi.fn();
+      capture.consume(Buffer.concat([frame('bootstrap'), Buffer.from(`AIONCORE_LISTENING ${marker}\n`)]), sink);
+      expect(capture.snapshot().captureState).toBe('invalid');
+      expect(sink).not.toHaveBeenCalled();
+    }
+  });
+});
 
 // ---- Module-level mocks ----
 vi.mock('node:child_process', () => ({
@@ -1041,6 +1177,125 @@ describe('BackendLifecycleManager.start (health timeout)', () => {
 });
 
 describe('BackendLifecycleManager.start (AIONCORE_READY consumption)', () => {
+  it('isolates late records from an older child even when its PID is reused', async () => {
+    vi.useFakeTimers();
+    vi.mocked(createServer).mockImplementation(
+      () => makeSyncFakeServer(33343) as unknown as ReturnType<typeof createServer>
+    );
+    const older = makeFakeChild();
+    const newer = makeFakeChild();
+    vi.mocked(spawn).mockReturnValueOnce(older).mockReturnValueOnce(newer);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'));
+    const manager = new BackendLifecycleManager(APP_META_PACKAGED, () => '/abs/path/aioncore');
+    const first = manager.start('/db/path').catch(() => undefined);
+    await Promise.resolve();
+    older.emit('error', new Error('owned test'));
+    await first;
+    const second = manager.start('/db/path');
+    await Promise.resolve();
+    emitListening(newer, 33343);
+    const record = {
+      v: 1,
+      pid: 99999,
+      generation: '00112233-4455-4677-8899-aabbccddeeff',
+      phase: 'bootstrap',
+      ordinal: 0,
+      status: 'unavailable',
+      fingerprint: null,
+      reason: 'unsupported_platform',
+      sqliteCode: null,
+      win32Code: null,
+    };
+    older.stdout?.emit('data', Buffer.from(`\x1eAIONCORE_DB_IDENTITY_V1 ${JSON.stringify(record)}\n`));
+    expect(manager.getDatabaseIdentitySnapshot()).toMatchObject({ attemptOrdinal: 2, captureState: 'not_observed' });
+    newer.stdout?.emit('data', Buffer.from(`\x1eAIONCORE_DB_IDENTITY_V1 ${JSON.stringify(record)}\nAIONCORE_READY\n`));
+    await expect(second).resolves.toBe(33343);
+    expect(manager.getDatabaseIdentitySnapshot()).toMatchObject({ attemptOrdinal: 2, captureState: 'partial' });
+    older.emit('exit', 1, null);
+    older.emit('close', 1, null);
+    expect(manager.getDatabaseIdentitySnapshot()?.attemptOrdinal).toBe(2);
+    fetchSpy.mockRestore();
+  }, 15_000);
+  it('does not expose a quarantined malformed listening marker in logs or startup failure details', async () => {
+    vi.useFakeTimers();
+    vi.mocked(createServer).mockImplementation(
+      () => makeSyncFakeServer(33343) as unknown as ReturnType<typeof createServer>
+    );
+    const child = makeFakeChild();
+    vi.mocked(spawn).mockReturnValue(child as unknown as ChildProcess);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const manager = new BackendLifecycleManager(APP_META_PACKAGED, () => '/abs/path/aioncore');
+    const started = manager.start('/db/path');
+    const errorResult = started.catch((error: unknown) => error);
+    await Promise.resolve();
+    const identity = {
+      v: 1,
+      pid: 99999,
+      generation: '00112233-4455-4677-8899-aabbccddeeff',
+      phase: 'bootstrap',
+      ordinal: 0,
+      status: 'identified',
+      fingerprint: 'a'.repeat(64),
+      reason: null,
+      sqliteCode: null,
+      win32Code: null,
+    };
+    child.stdout?.emit(
+      'data',
+      Buffer.from(
+        `\x1eAIONCORE_DB_IDENTITY_V1 ${JSON.stringify(identity)}\nAIONCORE_LISTENING {"port":33343,"orphan":"private-canary"}\n`
+      )
+    );
+    child.emit('exit', 1, null);
+    child.emit('close', 1, null);
+    const error = await errorResult;
+    expect(JSON.stringify(error)).not.toContain('private-canary');
+    expect(JSON.stringify(error)).not.toContain(identity.fingerprint);
+    expect(JSON.stringify(log.mock.calls)).not.toContain('private-canary');
+    expect(JSON.stringify(log.mock.calls)).not.toContain(identity.fingerprint);
+    expect(manager.getDatabaseIdentitySnapshot()?.captureState).toBe('invalid');
+    log.mockRestore();
+  });
+  it('retains identity through readiness while keeping the identity and later stdout out of logs', async () => {
+    vi.useFakeTimers();
+    vi.mocked(createServer).mockImplementation(
+      () => makeSyncFakeServer(33343) as unknown as ReturnType<typeof createServer>
+    );
+    const child = makeFakeChild();
+    vi.mocked(spawn).mockReturnValue(child as unknown as ChildProcess);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'));
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const manager = new BackendLifecycleManager(APP_META_PACKAGED, () => '/abs/path/aioncore');
+    const started = manager.start('/db/path');
+    await Promise.resolve();
+    emitListening(child, 33343);
+    const record = {
+      v: 1,
+      pid: 99999,
+      generation: '00112233-4455-4677-8899-aabbccddeeff',
+      phase: 'bootstrap',
+      ordinal: 0,
+      status: 'identified',
+      fingerprint: 'a'.repeat(64),
+      reason: null,
+      sqliteCode: null,
+      win32Code: null,
+    };
+    const payload = Buffer.from(`\x1eAIONCORE_DB_IDENTITY_V1 ${JSON.stringify(record)}\n`);
+    for (const byte of payload) child.stdout?.emit('data', Buffer.from([byte]));
+    child.stderr?.emit('data', Buffer.from('ordinary startup information\n'));
+    child.stdout?.emit(
+      'data',
+      Buffer.from(
+        `\x1eAIONCORE_DB_IDENTITY_V1 ${JSON.stringify({ ...record, phase: 'business', ordinal: 1 })}\nAIONCORE_READY\n`
+      )
+    );
+    await expect(started).resolves.toBe(33343);
+    expect(manager.getDatabaseIdentitySnapshot()).toMatchObject({ captureState: 'complete', readyObserved: true });
+    expect(JSON.stringify(log.mock.calls)).not.toContain(record.fingerprint);
+    log.mockRestore();
+    fetchSpy.mockRestore();
+  }, 15_000);
   it('AC-7: treats an AIONCORE_READY marker as ready without /health passing', async () => {
     vi.useFakeTimers();
     vi.mocked(createServer).mockImplementation(

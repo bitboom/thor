@@ -5,6 +5,7 @@
  */
 
 import React from 'react';
+import '@arco-design/web-react/lib/_util/react-19-adapter';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -155,6 +156,15 @@ describe('SystemModalContent directory settings', () => {
     updateSystemInfoMock.mockResolvedValue(undefined);
     restartMock.mockResolvedValue({ restarted: true, manualRestartRequired: false });
     showOpenMock.mockResolvedValue(['/new-logs']);
+  });
+
+  it('saves a local identity diagnostic through the no-argument desktop bridge', async () => {
+    const save = vi.fn().mockResolvedValue('saved');
+    Object.defineProperty(window, 'electronAPI', { configurable: true, value: { exportThorDatabaseIdentity: save } });
+    renderContent();
+    await userEvent.click(screen.getByRole('button', { name: 'settings.databaseIdentityExport' }));
+    expect(save).toHaveBeenCalledWith();
+    delete (window as unknown as { electronAPI?: unknown }).electronAPI;
   });
 
   it('persists a selected log directory and restarts with the updated directory config', async () => {

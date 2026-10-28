@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 获取拖拽文件/目录的绝对路径 / Get absolute path for dragged file/directory
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   getThorSyntheticMailConfig: () => ipcRenderer.invoke('thor:synthetic-mail-config'),
+  exportThorDatabaseIdentity: () => ipcRenderer.invoke('thor:export-database-identity'),
   getThorFeedbackAuthStatus: () => ipcRenderer.invoke('thor:feedback-auth-status'),
   openThorFeedbackInBrowser: (payload: { title: string; body: string }) =>
     ipcRenderer.invoke('thor:feedback-open-browser', payload),

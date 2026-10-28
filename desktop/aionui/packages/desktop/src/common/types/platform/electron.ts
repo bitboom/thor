@@ -16,6 +16,7 @@ export interface ElectronBridgeAPI {
   // 获取拖拽文件/目录的绝对路径 / Get absolute path for dragged file/directory
   getPathForFile?: (file: File) => string;
   getThorSyntheticMailConfig?: () => Promise<{ command: string; script: string }>;
+  exportThorDatabaseIdentity?: () => Promise<'saved' | 'cancelled' | 'unavailable' | 'failed' | 'busy'>;
   getThorFeedbackAuthStatus?: () => Promise<{
     status: 'authenticated' | 'unauthenticated' | 'missing';
     executable: string;

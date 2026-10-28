@@ -1,4 +1,6 @@
 {
+  "databaseIdentityExport": "データベース識別診断を保存",
+  "databaseIdentityExportDescription": "ファイルパスやデータベースの内容を含まない診断をローカルに保存します。フィードバックには送信されません。",
   "title": "Settings",
   "skillsHub": {
     "title": "スキルハブ",

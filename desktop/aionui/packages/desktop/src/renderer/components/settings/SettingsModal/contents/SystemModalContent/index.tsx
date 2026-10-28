@@ -20,7 +20,7 @@ import {
 } from '@/renderer/utils/file/previewPayload';
 import { notifyManualRestartRequired } from '@/renderer/utils/appRestart';
 import { isElectronDesktop } from '@/renderer/utils/platform';
-import { Alert, Collapse, Form, InputNumber, Message, Modal, Switch } from '@arco-design/web-react';
+import { Alert, Button, Collapse, Form, InputNumber, Message, Modal, Switch } from '@arco-design/web-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useSWR from 'swr';
@@ -574,6 +574,29 @@ const SystemModalContent: React.FC = () => {
 
           {/* In-app browser: sign-in state and cache */}
           <BrowserDataSection />
+
+          {isDesktop && window.electronAPI?.exportThorDatabaseIdentity ? (
+            <div className='px-[12px] md:px-[32px] py-16px bg-2 rd-16px'>
+              <PreferenceRow
+                label={t('settings.databaseIdentityExport')}
+                description={t('settings.databaseIdentityExportDescription')}
+              >
+                <Button
+                  onClick={async () => {
+                    try {
+                      const result = await window.electronAPI?.exportThorDatabaseIdentity?.();
+                      if (result === 'saved') Message.success(t('common.saveSuccess'));
+                      else if (result && result !== 'cancelled') Message.error(t('common.saveFailed'));
+                    } catch {
+                      Message.error(t('common.saveFailed'));
+                    }
+                  }}
+                >
+                  {t('settings.databaseIdentityExport')}
+                </Button>
+              </PreferenceRow>
+            </div>
+          ) : null}
 
           {/* Developer settings: DevTools + CDP (only visible in dev mode) */}
           <DevSettings />

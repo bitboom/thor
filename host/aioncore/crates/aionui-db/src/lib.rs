@@ -3,6 +3,7 @@
 //! SQLite database layer: init, migrations, repository traits, and implementations.
 mod agent_binding;
 mod database;
+mod database_identity;
 mod error;
 mod instance_lock;
 mod legacy_handoff;
@@ -17,8 +18,11 @@ pub use agent_binding::{
 };
 pub use database::{
     DATABASE_NEWER_THAN_APP_STAGE, Database, DatabaseInitError, DatabaseInitOptions, init_database,
-    init_database_memory, init_database_staged, init_database_staged_with_options, init_database_with_options,
-    latest_known_migration_version,
+    init_database_memory, init_database_staged, init_database_staged_with_observer, init_database_staged_with_options,
+    init_database_with_options, latest_known_migration_version,
+};
+pub use database_identity::{
+    DatabaseIdentityObservation, DatabaseIdentityObserver, DatabaseIdentityPhase, DatabaseIdentityUnavailable,
 };
 pub use error::{
     DbError, SQLITE_BUSY_MESSAGE_MARKERS, SQLITE_UNIQUE_VIOLATION_MARKER, message_indicates_busy,

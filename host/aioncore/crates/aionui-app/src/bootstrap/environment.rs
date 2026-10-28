@@ -11,7 +11,7 @@ use aionui_runtime::ShellProbeStatus;
 use crate::cli::Cli;
 
 use super::builtin_skills::materialize_builtin_skills;
-use super::tracing_init::{LogGuards, init_tracing};
+use super::tracing_init::{ConsoleOutput, LogGuards, init_tracing, init_tracing_with_console};
 use super::work_dir::resolve_work_dir;
 use super::{BootstrapError, BootstrapErrorCode};
 
@@ -27,10 +27,26 @@ pub struct ServerEnvironment {
 /// Cheap, synchronous, no IO beyond creating the log directory.
 /// All subcommands that need logging and config should call this first.
 pub fn init_environment(cli: &Cli, merged_path: &str) -> Result<ServerEnvironment, BootstrapError> {
+    init_environment_with_console(cli, merged_path, ConsoleOutput::Stdout)
+}
+
+pub(crate) fn init_environment_with_console(
+    cli: &Cli,
+    merged_path: &str,
+    console: ConsoleOutput,
+) -> Result<ServerEnvironment, BootstrapError> {
     // A custom --log-dir that cannot be created must not permanently brick
     // bootstrap (AIONUI-231): init_tracing falls back to the default dir.
     let default_log_dir = cli.data_dir.join("logs");
-    let log_guard = init_tracing(cli.log_dir.as_deref(), &default_log_dir, cli.log_level.as_deref())?;
+    let log_guard = match console {
+        ConsoleOutput::Stdout => init_tracing(cli.log_dir.as_deref(), &default_log_dir, cli.log_level.as_deref())?,
+        ConsoleOutput::Stderr => init_tracing_with_console(
+            cli.log_dir.as_deref(),
+            &default_log_dir,
+            cli.log_level.as_deref(),
+            console,
+        )?,
+    };
 
     info!(
         path_segments = merged_path.split(if cfg!(windows) { ';' } else { ':' }).count(),
@@ -127,6 +143,13 @@ fn validate_identity_environment(
 /// Requires only `data_dir`. Subcommands that need persistent state
 /// (database, skill files) should call this after `init_environment`.
 pub async fn init_data_layer(config: &AppConfig) -> Result<Database, BootstrapError> {
+    init_data_layer_observed(config, None).await
+}
+
+pub(crate) async fn init_data_layer_observed(
+    config: &AppConfig,
+    observer: Option<&aionui_db::DatabaseIdentityObserver>,
+) -> Result<Database, BootstrapError> {
     let boot = Instant::now();
 
     materialize_builtin_skills(&config.data_dir).await.map_err(|e| {
@@ -154,11 +177,12 @@ pub async fn init_data_layer(config: &AppConfig) -> Result<Database, BootstrapEr
         .with_field("databasePath", db_path.display().to_string())
     })?;
     info!("Initializing database at {}", db_path.display());
-    let database = aionui_db::init_database_staged_with_options(
+    let database = aionui_db::init_database_staged_with_observer(
         &db_path,
         aionui_db::DatabaseInitOptions {
             recover_corrupted_database: config.recover_corrupted_database,
         },
+        observer,
     )
     .await
     .map_err(|e| database_init_bootstrap_error(e, &db_path))?;

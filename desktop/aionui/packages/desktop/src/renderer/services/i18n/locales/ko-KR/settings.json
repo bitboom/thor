@@ -1,4 +1,6 @@
 {
+  "databaseIdentityExport": "데이터베이스 식별 진단 저장",
+  "databaseIdentityExportDescription": "파일 경로나 데이터베이스 내용 없이 로컬 진단을 저장합니다. 피드백과 함께 전송되지 않습니다.",
   "title": "설정",
   "skillsHub": {
     "title": "스킬 허브",

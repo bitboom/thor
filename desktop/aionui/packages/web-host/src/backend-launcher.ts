@@ -14,6 +14,7 @@ import { mkdirSync, statSync } from 'node:fs';
 import { connect, createServer, type Socket } from 'node:net';
 import path from 'node:path';
 import { cleanupRegisteredAgentProcesses } from './agent-process-registry.js';
+import { DatabaseIdentityCapture } from './database-identity.js';
 import type { AppMetadata, BackendBinaryResolver } from './types.js';
 
 type BackendStatus = 'stopped' | 'starting' | 'running' | 'error';
@@ -532,6 +533,12 @@ async function probeHealthCheckTcpConnect(port: number, timeoutMs = 1_000): Prom
 }
 
 export class BackendLifecycleManager {
+  private identityAttempt = 0;
+  private identityCapture?: DatabaseIdentityCapture;
+
+  getDatabaseIdentitySnapshot() {
+    return this.identityCapture?.snapshot() ?? null;
+  }
   private childProcess: ChildProcess | null = null;
   private localToken?: string;
   private _port = 0;
@@ -733,6 +740,10 @@ export class BackendLifecycleManager {
 
     backendPid = this.childProcess.pid;
     const pid = backendPid;
+    const identityCapture = new DatabaseIdentityCapture(pid ?? 0, ++this.identityAttempt);
+    this.identityCapture = identityCapture;
+    this.childProcess.once('exit', () => identityCapture.exit());
+    this.childProcess.once('close', () => identityCapture.close());
     const killOnExit = () => {
       if (pid) void killBackendProcessTree(this.childProcess, 'SIGKILL');
     };
@@ -834,8 +845,8 @@ export class BackendLifecycleManager {
     });
 
     this.childProcess.stdout?.on('data', (data: Buffer) => {
-      stdoutTail = appendOutputTail(stdoutTail, data);
-      for (const line of data.toString().split('\n')) {
+      identityCapture.consume(data, (line, forward) => {
+        if (forward) stdoutTail = appendOutputTail(stdoutTail, Buffer.from(`${line}\n`));
         const trimmed = line.trim();
         const port = parseAioncoreListeningPort(trimmed);
         if (port !== undefined) {
@@ -847,6 +858,7 @@ export class BackendLifecycleManager {
         } else if (isAioncoreReadyLine(trimmed)) {
           if (!serverReadyObserved) {
             serverReadyObserved = true;
+            identityCapture.markReady();
             resolveReady();
           }
         } else if (
@@ -858,8 +870,8 @@ export class BackendLifecycleManager {
           serverListeningObservedAfterMs = Date.now() - startupStartedAt;
           serverListeningLine = trimmed;
         }
-        if (trimmed) console.log(`[aioncore] ${line}`);
-      }
+        if (forward && trimmed) console.log(`[aioncore] ${line}`);
+      });
     });
 
     this.childProcess.stderr?.on('data', (data: Buffer) => {
@@ -907,7 +919,10 @@ export class BackendLifecycleManager {
         void Promise.resolve(options?.onHealthTimeout?.(healthTimeoutError)).catch((error) => {
           console.error('[aioncore] health timeout handler failed:', error);
         });
-        this.continueWaitingForHealth(this._port, this.childProcess, startupStartedAt, readySignal, options?.onReady);
+        this.continueWaitingForHealth(this._port, this.childProcess, startupStartedAt, readySignal, (readyPort) => {
+          identityCapture.markReady();
+          options?.onReady?.(readyPort);
+        });
         return this._port;
       }
       startupSettled = true;
@@ -918,6 +933,7 @@ export class BackendLifecycleManager {
     }
 
     startupSettled = true;
+    identityCapture.markReady();
     this._status = 'running';
     this.restartCount = 0;
     if (healthOrReady.kind === 'ready') {

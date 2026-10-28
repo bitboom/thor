@@ -1,4 +1,6 @@
 {
+  "databaseIdentityExport": "ذخیره عیب‌یابی شناسه پایگاه داده",
+  "databaseIdentityExportDescription": "عیب‌یابی محلی را بدون مسیر فایل یا محتوای پایگاه داده ذخیره می‌کند و همراه بازخورد ارسال نمی‌شود.",
   "title": "تنظیمات",
   "skillsHub": {
     "title": "مرکز مهارت‌ها",

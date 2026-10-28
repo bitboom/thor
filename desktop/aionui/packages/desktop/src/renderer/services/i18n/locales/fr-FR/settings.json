@@ -1,4 +1,6 @@
 {
+  "databaseIdentityExport": "Enregistrer le diagnostic d’identité de la base de données",
+  "databaseIdentityExportDescription": "Enregistre un diagnostic local sans chemins ni contenu de base de données. Il n’est pas envoyé avec les commentaires.",
   "title": "Paramètres",
   "skillsHub": {
     "title": "Centre de compétences",
