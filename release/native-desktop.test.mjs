@@ -73,6 +73,8 @@ export function stageResources(){
  throw Error('STOP_AFTER_VERIFIED_PREPARATION');
 }
 `);
+  const signature = path.join(directory, 'signature-fixture.mjs');
+  writeFileSync(signature, `export function assertUnsignedInstaller(){throw Error('Signature must be checked after installer creation');}`);
   const hook = path.join(directory, 'isolated-prepare-hook.mjs');
   writeFileSync(hook, `import cp from'node:child_process';import{registerHooks,syncBuiltinESMExports}from'node:module';import{mkdirSync,writeFileSync}from'node:fs';import{pathToFileURL}from'node:url';import path from'node:path';
 Object.defineProperty(process,'platform',{value:'win32'});Object.defineProperty(process,'arch',{value:'x64'});
@@ -85,6 +87,7 @@ registerHooks({resolve(specifier,context,next){
  if(context.parentURL===pathToFileURL(${JSON.stringify(script)}).href){
   if(specifier==='./artifact-lib.mjs')return{url:pathToFileURL(${JSON.stringify(artifact)}).href,shortCircuit:true};
   if(specifier==='./stage-resources.mjs')return{url:pathToFileURL(${JSON.stringify(stage)}).href,shortCircuit:true};
+  if(specifier==='./authenticode.mjs')return{url:pathToFileURL(${JSON.stringify(signature)}).href,shortCircuit:true};
  }return next(specifier,context);
 }});
 `);

@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { root, readJson, describeFile, digest, treeDigest, readUpdateManifest, validateUpdateManifest, validateBundleProvenance, verifyRelease } from './artifact-lib.mjs';
 import { stageResources, sourceProvenance } from './stage-resources.mjs';
+import { assertUnsignedInstaller } from './authenticode.mjs';
 
 if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('Windows x64 packaging requires Windows x64.');
 const lock = readJson(path.join(root, 'upstream.lock.json'));
@@ -63,9 +64,7 @@ const hub = { commit: lock.hub.commit, indexSha256: lock.hub.indexSha256, extens
 copyFileSync(path.join(staged.resources, 'THIRD_PARTY_NOTICES.txt'), path.join(output, 'THIRD_PARTY_NOTICES.txt'));
 const name = `Thor-${pkg.version}-win-x64.exe`;
 const installer = readFileSync(path.join(output, name));
-const signaturePath = path.join(output, name).replaceAll("'", "''");
-const signatureStatus = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `(Get-AuthenticodeSignature -LiteralPath '${signaturePath}').Status.ToString()`], { encoding: 'utf8' }).trim();
-if (signatureStatus !== 'NotSigned') throw new Error('Preview installer must have a verified unsigned Authenticode status.');
+assertUnsignedInstaller(path.join(output, name));
 validateUpdateManifest(readUpdateManifest(output), { version: pkg.version, installer });
 const names = [name, 'latest.yml', 'THIRD_PARTY_NOTICES.txt'];
 if (existsSync(path.join(output, `${name}.blockmap`))) names.push(`${name}.blockmap`);

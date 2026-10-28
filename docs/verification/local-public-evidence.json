@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-10-27T23:55:22.901Z",
+  "recordedAt": "2026-10-28T01:30:00Z",
   "data": "synthetic-only",
   "installedDesktopVerified": false,
   "managedTreeRepairVerification": {
@@ -158,9 +158,13 @@
       "productionLinesChanged": 1,
       "newRustRegressions": 3,
       "newRustRegressionsCompiled": true,
-      "newRustRegressionsExecuted": false,
-      "fixedCoreP11Retested": false,
-      "installedAppFeedbackUiTested": false
+      "newRustRegressionsExecuted": true,
+      "fixedCoreP11Retested": true,
+      "installedAppFeedbackUiTested": false,
+      "fixedCoreSourceSha": "10495f93871a84220735e5eb4dc83e48da833836",
+      "issueClosed": true,
+      "resolutionCommentUrl": "https://github.com/bitboom/thor/issues/6#issuecomment-6458216797",
+      "scope": "Protocol/Core candidate verified against synthetic local fixture; release and installed app acceptance remain pending."
     }
   },
   "limitations": [
@@ -723,13 +727,13 @@
     },
     "baseSourceSha": "d2d232c98e7031f965ce952230edef2a7525648d",
     "checksAgainstUncommittedChanges": true,
-    "scope": "Historical local source-repair checks on d2 before CI11. The later Electron source rebuild and persistence PASS is recorded in ci11NativePreflightAndFixtureFailure; packaged proof and fixed-Core P11 remain pending."
+    "scope": "Historical local source-repair checks on d2 before CI11. At that point packaged proof and fixed-Core P11 remained pending; both later passed on the CI12 diagnostic candidate, whose overall workflow failed at installer signature status."
   },
   "latestWindowsAttempt": {
-    "sourceSha": "8d686a338934e9aae46f82e87a394cb390ccb9d7",
-    "runId": 40604294379,
+    "sourceSha": "10495f93871a84220735e5eb4dc83e48da833836",
+    "runId": 40605485330,
     "conclusion": "failure",
-    "evidenceKey": "ci11NativePreflightAndFixtureFailure"
+    "evidenceKey": "ci12DiagnosticCoreAndInstallerSignatureFailure"
   },
   "ci11NativePreflightAndFixtureFailure": {
     "schemaVersion": 1,
@@ -780,7 +784,7 @@
       "productionHelperSha256": "eb83f9253f69c1bdba8f517e4f5805b1d92f0d549ca69b7ff06acb3627bed32b",
       "localRootNodePassed": 148,
       "localRootNodeFailed": 0,
-      "ci12Verified": false
+      "ci12Verified": true
     },
     "evidenceSha256": {
       "thor-ci11-native-preflight.log": "489389bb3fcd259b60882ae51a377d8e8f83beacebd6aa27025c30a89736c5ce",
@@ -789,5 +793,122 @@
       "thor-ci11-canonical-fixture-receipt.json": "63608dc29e79e3244bb17f8de7daa157d78db3c1230dceb7ce467e5f24da20aa"
     },
     "releaseEligible": false
+  },
+  "ci12DiagnosticCoreAndInstallerSignatureFailure": {
+    "schemaVersion": 1,
+    "sourceSha": "10495f93871a84220735e5eb4dc83e48da833836",
+    "runId": 40605485330,
+    "runUrl": "https://github.com/bitboom/thor/actions/runs/40605485330",
+    "conclusion": "failure",
+    "runtimeReleaseTests": {
+      "passed": 148,
+      "failed": 0,
+      "skipped": 0
+    },
+    "coreWorkspace": {
+      "passed": 9347,
+      "failed": 0,
+      "ignored": 53,
+      "resultGroups": 251,
+      "initialRawOutputRegressionsPassed": 3,
+      "msvcClippyPassed": true
+    },
+    "explicitLocalChannelRerun": {
+      "passed": 7,
+      "failed": 0,
+      "resultGroups": 3
+    },
+    "desktop": {
+      "passed": 5027,
+      "failed": 0,
+      "skipped": 6,
+      "filesPassed": 526,
+      "filesSkipped": 1,
+      "durationSeconds": 263.82
+    },
+    "native": {
+      "forcedSourceRebuildPassed": true,
+      "packagedThorExeDatabaseSmokePassed": true,
+      "electronVersion": "43.8.3",
+      "modulesAbi": "148",
+      "additionalNativeFiles": 2,
+      "installedAppVerified": false
+    },
+    "installer": {
+      "nsisBuiltOnRunner": true,
+      "signatureStatusVerified": false,
+      "retained": false,
+      "published": false,
+      "installed": false,
+      "failure": "Legacy PowerShell could not load Microsoft.PowerShell.Security when querying Get-AuthenticodeSignature.",
+      "repairAndFreshWorkflowRequired": true
+    },
+    "diagnosticArtifact": {
+      "id": 12782525964,
+      "archiveSize": 113540359,
+      "archiveSha256": "ef7c98f1dcee2a89e67218ceda0f8c6df272c8efc911df1640dba608485263de",
+      "coreSha256": "07217391ba6c079f77c3db7544fa7ed309c6838c4d8788919465c227321cd775",
+      "bundleReceiptSha256": "14bced6d445f35ff1b360cba95326d594584abea16d4f4e1130c100722b33079",
+      "releaseEligible": false
+    },
+    "canonicalP11": {
+      "passed": true,
+      "unchangedOriginalHarness": true,
+      "workaroundUsed": false,
+      "realCore": true,
+      "realModel": false,
+      "ownedProcessTreeStopped": true,
+      "loopbackRemoteWriteCounts": [
+        0,
+        1,
+        1,
+        1
+      ],
+      "rawNativeStdioCaptured": false,
+      "evidenceScope": "Fixture wire source, durable database and actual-run assertions; independent database/WAL review corroborated four conversations.",
+      "exactlyOnceGuaranteeClaimed": false,
+      "installedDesktopVerified": false,
+      "receiptSha256": "1b1936969dac9f0371f149e21e07ee21b610a04d4a610d42189dcd4e1c6c9a7c",
+      "startupReplayObservationMs": 750,
+      "powerLossTested": false
+    },
+    "officeApplicationsDetectedFromMetadata": {
+      "version": "16.0.20527.20088",
+      "applications": [
+        "Word",
+        "Excel",
+        "PowerPoint"
+      ],
+      "nativeRenderingVerified": false,
+      "nativeEditingVerified": false
+    },
+    "releaseEligible": false,
+    "installedDesktopVerified": false,
+    "installedFeedbackLoopVerified": false,
+    "installedUpdateVerified": false,
+    "evidenceSha256": {
+      "thor-ci12-core-artifact/bundle-receipt.json": "14bced6d445f35ff1b360cba95326d594584abea16d4f4e1130c100722b33079",
+      "thor-ci12-p11.json": "1b1936969dac9f0371f149e21e07ee21b610a04d4a610d42189dcd4e1c6c9a7c",
+      "thor-ci12-packaging-failure.log": "9e4a946aefeb6c541447430f0b19ed7806ff25377f56daf617d2a8296f9572df"
+    }
+  },
+  "signatureQueryRepair": {
+    "baseSourceSha": "10495f93871a84220735e5eb4dc83e48da833836",
+    "scope": "Uncommitted local release-pipeline and workflow changes after CI12; no changed historical CI12 result.",
+    "originalAutoloadFailureReproduced": true,
+    "childPsModulePathRemovalCaseInsensitive": true,
+    "systemPowerShellHostAndSecurityModule": true,
+    "exactNotSignedGuardRetained": true,
+    "earlySyntheticPredependencyPreflightPassed": true,
+    "diagnosticCoreNotSigned": true,
+    "signedSystemHostValidAndRejectedAsUnsigned": true,
+    "parentEnvironmentUnchanged": true,
+    "coreBytesUnchanged": true,
+    "focusedTestsPassed": 19,
+    "rootTestsPassed": 154,
+    "actualNextCiInstallerVerified": false,
+    "proofSha256": "3c211bf70c05eb5334b0bf7c99eb9087cf7f79ad0a866af826c278c24484cc24",
+    "diagnosisSha256": "e741cf42ada82e1441501345701b340db73f05dbe52656c9397157137168e91a",
+    "fixedEvidenceSha256": "df0e880d2f29ae73c8f6da3ee569b6f04eaf78c278841478028ce8c51d9724e8"
   }
 }
