@@ -52,6 +52,28 @@ describe('Thor local Core capability transport', () => {
       'X-Thor-Local-Token': 'secret',
     });
   });
+  it('normalizes only a single exact file origin for trusted Core WebSocket requests', () => {
+    const auth = { 'X-Thor-Local-Token': 'secret' };
+    const ws = 'ws://127.0.0.1:13400/ws';
+    expect(coreRequestHeaders({ Origin: 'file://' }, auth, true, ws)).toEqual({ Origin: 'null', ...auth });
+    expect(coreRequestHeaders({ oRiGiN: 'file://' }, auth, true, ws)).toEqual({ oRiGiN: 'null', ...auth });
+    for (const origin of ['null', 'file:///other', 'file://other', 'http://localhost:5173', 'https://example.test']) {
+      expect(coreRequestHeaders({ Origin: origin }, auth, true, ws)).toEqual({ Origin: origin, ...auth });
+    }
+    expect(coreRequestHeaders({ Origin: 'file://' }, auth, true, 'http://127.0.0.1:13400/api')).toEqual({
+      Origin: 'file://',
+      ...auth,
+    });
+    expect(coreRequestHeaders({ Origin: 'file://', 'X-Thor-Local-Token': 'spoofed' }, auth, false, ws)).toEqual({
+      Origin: 'file://',
+    });
+    expect(coreRequestHeaders({ Origin: 'file://', origin: 'file://' }, auth, true, ws)).toEqual({
+      Origin: 'file://',
+      origin: 'file://',
+      ...auth,
+    });
+    expect(coreRequestHeaders({}, auth, true, ws)).toEqual(auth);
+  });
   it('authenticates only main-process fetches to the live port and refuses redirects', async () => {
     const original = vi.fn(async () => new Response('ok'));
     const host = { fetch: original as typeof fetch };

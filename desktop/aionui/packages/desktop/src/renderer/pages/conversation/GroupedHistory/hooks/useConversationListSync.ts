@@ -434,6 +434,12 @@ export const reconcileGeneratingFromRuntime = (conversation_id: string, isProces
   }
 };
 
+/** Clear only after the active chat has guarded a fresh idle runtime snapshot. */
+export const clearGeneratingAfterRecovery = (conversation_id: string): void => {
+  clearGenerating(conversation_id, 'reconcile');
+  refreshConversations();
+};
+
 /**
  * Apply a waiting-confirmation transition to a single conversation and, when the
  * waiting boolean flips, refresh the derived id set and notify subscribers. The

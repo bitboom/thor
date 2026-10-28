@@ -60,11 +60,25 @@ export function trustedCoreRequest(input: {
 export function coreRequestHeaders(
   input: Record<string, string>,
   auth: Record<string, string>,
-  trusted: boolean
+  trusted: boolean,
+  requestUrl?: string
 ): Record<string, string> {
   const headers = { ...input };
   for (const name of Object.keys(headers)) if (name.toLowerCase() === 'x-thor-local-token') delete headers[name];
-  if (trusted) Object.assign(headers, auth);
+  if (trusted) {
+    // Chromium serializes a file-backed renderer's WebSocket Origin as file://;
+    // Core accepts the opaque origin 'null'. Restrict this to the already
+    // authorized top-level Core WebSocket request and one exact Origin header.
+    let isWebSocket = false;
+    try {
+      isWebSocket = !!requestUrl && new URL(requestUrl).protocol === 'ws:';
+    } catch {
+      // Invalid targets are never normalized.
+    }
+    const origins = Object.keys(headers).filter((name) => name.toLowerCase() === 'origin');
+    if (isWebSocket && origins.length === 1 && headers[origins[0]] === 'file://') headers[origins[0]] = 'null';
+    Object.assign(headers, auth);
+  }
   return headers;
 }
 

@@ -673,3 +673,71 @@ async fn unauthenticated_access_is_rejected() {
     let json = body_json(resp).await;
     assert_eq!(json["code"], "UNAUTHORIZED");
 }
+
+// Unsaved connection tests must omit an ID: Core persists results whenever an
+// ID is present, and therefore requires that ID to refer to a saved server.
+#[tokio::test]
+async fn synthetic_mail_test_connection_distinguishes_unsaved_and_saved_ids() {
+    let (mut app, services) = build_app().await;
+    let (token, csrf) = setup_and_login(&mut app, &services, "admin", "StrongP@ss1").await;
+    let node = aionui_runtime::resolve_command_path("node").expect("Node is required for synthetic MCP protocol tests");
+    assert!(node.is_absolute(), "Node must resolve to an absolute executable");
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(4)
+        .expect("aionui-app must be inside the Thor workspace");
+    let fixture = repo.join("integrations/synthetic-mail/server.mjs");
+    assert!(fixture.is_file(), "synthetic mail fixture must exist");
+    let entry = json!({
+        "name": "thor_synthetic_mail_contract",
+        "transport": { "type": "stdio", "command": node, "args": [fixture], "env": {} }
+    });
+
+    let req = json_with_token("POST", "/api/mcp/test-connection", entry.clone(), &token, &csrf);
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let result = body_json(resp).await;
+    assert_eq!(result["data"]["success"], true);
+    let tools = result["data"]["tools"].as_array().expect("tools returned");
+    for name in [
+        "mail_search",
+        "mail_read",
+        "mail_list_attachments",
+        "mail_authorize_attachment",
+        "mail_read_attachment",
+        "mail_reset_session",
+    ] {
+        assert!(
+            tools.iter().any(|tool| tool["name"] == name),
+            "missing required synthetic tool {name}"
+        );
+    }
+
+    let mut fake = entry.clone();
+    fake["id"] = json!("thor-synthetic-test");
+    let req = json_with_token("POST", "/api/mcp/test-connection", fake, &token, &csrf);
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert!(!resp.status().is_success(), "a fabricated saved-server ID must fail");
+
+    let req = json_with_token("POST", "/api/mcp/servers", entry.clone(), &token, &csrf);
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let created = body_json(resp).await;
+    let id = created["data"]["id"].as_str().expect("saved server ID");
+    let mut saved = entry;
+    saved["id"] = json!(id);
+    let req = json_with_token("POST", "/api/mcp/test-connection", saved, &token, &csrf);
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(body_json(resp).await["data"]["success"], true);
+    let req = get_with_token(&format!("/api/mcp/servers/{id}"), &token);
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let persisted = body_json(resp).await;
+    assert_eq!(persisted["data"]["last_test_status"], "connected");
+    assert!(
+        persisted["data"]["tools"]
+            .as_array()
+            .is_some_and(|tools| tools.len() >= 6)
+    );
+}

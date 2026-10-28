@@ -528,7 +528,7 @@ const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): v
   // Strip on every hop so a redirect cannot carry the capability elsewhere.
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['<all_urls>'] }, (details, callback) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
-      callback({ requestHeaders: coreRequestHeaders(details.requestHeaders, {}, false) });
+      callback({ requestHeaders: coreRequestHeaders(details.requestHeaders, {}, false, details.url) });
       return;
     }
     const trusted = trustedCoreRequest({
@@ -541,7 +541,12 @@ const createWindow = ({ showOnReady = true }: { showOnReady?: boolean } = {}): v
       trustedDocuments: trustedRendererDocuments,
     });
     callback({
-      requestHeaders: coreRequestHeaders(details.requestHeaders, backendManager.getLocalAuthHeaders(), trusted),
+      requestHeaders: coreRequestHeaders(
+        details.requestHeaders,
+        backendManager.getLocalAuthHeaders(),
+        trusted,
+        details.url
+      ),
     });
   });
   // Preview guests use fresh in-memory sessions and no Node/preload bridge.

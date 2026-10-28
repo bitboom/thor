@@ -8,6 +8,10 @@ import React, { type PropsWithChildren } from 'react';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ipcBridge } from '@/common';
+import {
+  localSendStarted,
+  conversationDeleted,
+} from '@/renderer/pages/conversation/runtime/conversationRuntimeViewStore';
 import type { IMessageAcpToolCall, IMessageText, IMessageThinking } from '@/common/chat/chatLib';
 import {
   MessageListLoadingProvider,
@@ -16,6 +20,8 @@ import {
   useAddOrUpdateMessage,
   useMessageLstCache,
   useMessageList,
+  useMessagePaginationState,
+  useLoadPreviousMessagePage,
   useReplaceWithAnchorWindow,
 } from '@/renderer/pages/conversation/Messages/hooks';
 
@@ -489,7 +495,7 @@ describe('message merging', () => {
     ).toBe('finish');
   });
 
-  it('does not reload on turnCompleted when there is no pending right-position message', async () => {
+  it('loads persisted assistant output on turnCompleted even without a pending user row', async () => {
     const invoke = vi.mocked(ipcBridge.database.getConversationMessages.invoke);
     invoke.mockResolvedValue({
       items: [],
@@ -505,12 +511,37 @@ describe('message merging', () => {
       return () => {};
     });
 
-    renderHook(() => useMessageLstCache(CONVERSATION_ID), { wrapper: CacheWrapper });
+    const { result } = renderHook(
+      () => {
+        useMessageLstCache(CONVERSATION_ID);
+        return useMessageList();
+      },
+      { wrapper: CacheWrapper }
+    );
 
     await act(async () => {
       await Promise.resolve();
     });
 
+    invoke.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'answer',
+          msg_id: 'answer',
+          conversation_id: CONVERSATION_ID,
+          type: 'text',
+          position: 'left',
+          status: 'finish',
+          hidden: false,
+          created_at: Date.now(),
+          content: { content: 'persisted answer' },
+        },
+      ],
+      oldest_cursor: null,
+      newest_cursor: null,
+      has_more_before: false,
+      has_more_after: false,
+    });
     invoke.mockClear();
 
     act(() => {
@@ -520,7 +551,215 @@ describe('message merging', () => {
       await Promise.resolve();
     });
 
+    expect(invoke).toHaveBeenCalled();
+    expect(result.current.some((message) => message.msg_id === 'answer')).toBe(true);
+  });
+
+  it('does not start a completion reload after the chat unmounts', async () => {
+    const invoke = vi.mocked(ipcBridge.database.getConversationMessages.invoke);
+    invoke.mockResolvedValue({
+      items: [],
+      oldest_cursor: null,
+      newest_cursor: null,
+      has_more_before: false,
+      has_more_after: false,
+    });
+    let finish: ((payload: any) => void) | undefined;
+    vi.mocked(ipcBridge.conversation.turnCompleted.on).mockImplementation((fn: any) => {
+      finish = fn;
+      return () => {};
+    });
+    const { unmount } = renderHook(() => useMessageLstCache(CONVERSATION_ID), { wrapper: CacheWrapper });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    invoke.mockClear();
+    await act(async () => {
+      finish?.({ session_id: CONVERSATION_ID, turn_id: 'old' });
+      unmount();
+      await Promise.resolve();
+    });
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('does not apply a delayed turn-completion page after a new send', async () => {
+    const invoke = vi.mocked(ipcBridge.database.getConversationMessages.invoke);
+    const initial = {
+      items: [],
+      oldest_cursor: 'initial',
+      newest_cursor: 'initial',
+      has_more_before: true,
+      has_more_after: false,
+    };
+    invoke.mockResolvedValueOnce(initial);
+    let resolvePage!: (value: any) => void;
+    invoke.mockReturnValueOnce(
+      new Promise<any>((resolve) => {
+        resolvePage = resolve;
+      })
+    );
+    let finish: ((payload: any) => void) | undefined;
+    vi.mocked(ipcBridge.conversation.turnCompleted.on).mockImplementation((fn: any) => {
+      finish = fn;
+      return () => {};
+    });
+    const { result } = renderHook(
+      () => ({
+        reload: useMessageLstCache(CONVERSATION_ID),
+        messages: useMessageList(),
+        pagination: useMessagePaginationState(),
+      }),
+      { wrapper: CacheWrapper }
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      finish?.({ session_id: CONVERSATION_ID, turn_id: 'old' });
+      await Promise.resolve();
+    });
+    act(() => {
+      localSendStarted(CONVERSATION_ID);
+    });
+    await act(async () => {
+      resolvePage({
+        ...initial,
+        oldest_cursor: 'stale',
+        items: [
+          {
+            id: 'stale',
+            msg_id: 'stale',
+            conversation_id: CONVERSATION_ID,
+            type: 'text',
+            position: 'left',
+            content: { content: 'stale' },
+          },
+        ],
+      });
+      await Promise.resolve();
+    });
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.pagination.oldestCursor).toBe('initial');
+    conversationDeleted(CONVERSATION_ID);
+  });
+
+  it('does not apply a delayed recovery page after the turn changes', async () => {
+    const invoke = vi.mocked(ipcBridge.database.getConversationMessages.invoke);
+    const initial = {
+      items: [],
+      oldest_cursor: 'initial',
+      newest_cursor: 'initial',
+      has_more_before: true,
+      has_more_after: false,
+    };
+    invoke.mockResolvedValueOnce(initial);
+    let resolvePage!: (value: any) => void;
+    const delayed = new Promise<any>((resolve) => {
+      resolvePage = resolve;
+    });
+    invoke.mockReturnValueOnce(delayed);
+    const { result } = renderHook(
+      () => ({
+        reload: useMessageLstCache(CONVERSATION_ID),
+        messages: useMessageList(),
+        pagination: useMessagePaginationState(),
+      }),
+      { wrapper: CacheWrapper }
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    let current = true;
+    let pending!: Promise<unknown>;
+    act(() => {
+      pending = result.current.reload(() => current);
+    });
+    current = false;
+    await act(async () => {
+      resolvePage({
+        ...initial,
+        oldest_cursor: 'stale',
+        items: [
+          {
+            id: 'stale',
+            msg_id: 'stale',
+            conversation_id: CONVERSATION_ID,
+            type: 'text',
+            position: 'left',
+            content: { content: 'stale' },
+          },
+        ],
+      });
+      await pending;
+    });
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.pagination.oldestCursor).toBe('initial');
+  });
+
+  it('does not apply a delayed recovery page over a newly requested history page', async () => {
+    const invoke = vi.mocked(ipcBridge.database.getConversationMessages.invoke);
+    const initial = {
+      items: [],
+      oldest_cursor: 'initial',
+      newest_cursor: 'initial',
+      has_more_before: true,
+      has_more_after: false,
+    };
+    invoke.mockResolvedValueOnce(initial);
+    let resolveLatest!: (value: any) => void;
+    let resolvePrevious!: (value: any) => void;
+    invoke.mockReturnValueOnce(
+      new Promise<any>((resolve) => {
+        resolveLatest = resolve;
+      })
+    );
+    invoke.mockReturnValueOnce(
+      new Promise<any>((resolve) => {
+        resolvePrevious = resolve;
+      })
+    );
+    const { result } = renderHook(
+      () => ({
+        reload: useMessageLstCache(CONVERSATION_ID),
+        messages: useMessageList(),
+        pagination: useMessagePaginationState(),
+        previous: useLoadPreviousMessagePage(CONVERSATION_ID),
+      }),
+      { wrapper: CacheWrapper }
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    let latest!: Promise<unknown>;
+    let previous!: Promise<unknown>;
+    act(() => {
+      latest = result.current.reload();
+      previous = result.current.previous();
+    });
+    await act(async () => {
+      resolveLatest({
+        ...initial,
+        oldest_cursor: 'stale',
+        items: [
+          {
+            id: 'stale',
+            msg_id: 'stale',
+            conversation_id: CONVERSATION_ID,
+            type: 'text',
+            position: 'left',
+            content: { content: 'stale' },
+          },
+        ],
+      });
+      await latest;
+    });
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.pagination.isLoadingBefore).toBe(true);
+    await act(async () => {
+      resolvePrevious({ ...initial, oldest_cursor: 'older' });
+      await previous;
+    });
+    expect(result.current.pagination.oldestCursor).toBe('older');
   });
 
   it('ignores turnCompleted for a different conversation even with a pending row', async () => {

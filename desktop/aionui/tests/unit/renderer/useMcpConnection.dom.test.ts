@@ -75,6 +75,9 @@ describe('useMcpConnection — ELECTRON-1A1 unmount race', () => {
       await result.current.handleTestMcpConnection(server);
     });
 
+    expect(mcpService.testMcpConnection.invoke).toHaveBeenCalledWith(
+      expect.objectContaining({ id: server.id, runtime_scope_id: server.id })
+    );
     expect(addSpy).toHaveBeenCalled();
     // Replaying every queued callback must not propagate the Arco crash.
     for (const call of addSpy.mock.calls) {

@@ -1,9 +1,10 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-10-28T03:30:46Z",
+  "recordedAt": "2026-10-28T16:16:10.018Z",
   "data": "Synthetic task fixtures and sanitized public release/install/UI observations; no private workspace content.",
-  "latestPublishedWindowsEvidence": "public-windows-0.1.0.json",
-  "installedObservationScope": "0.1.0 installed files, ready window, Codex connection button and browser-feedback success path passed; full installed-product acceptance remains incomplete.",
+  "latestPublishedWindowsEvidence": "local-public-evidence.json",
+  "laterInstalledWindowsObservations": "public-windows-0.1.0-followup.json",
+  "installedObservationScope": "0.1.0 feedback and synthetic Codex/MCP checks plus actual 0.1.0-to-0.1.1 app update. Checked data was retained after an additional ordinary restart; automatic first-launch display and sample registration failed. Full installed-product acceptance remains incomplete.",
   "installedDesktopVerified": false,
   "managedTreeRepairVerification": {
     "baseCommit": "cc72a507802a314fc684c240b1f5267ccb877653",
@@ -170,7 +171,7 @@
     }
   },
   "limitations": [
-    "0.1.0 installed-window and browser-feedback success observations are recorded in public-windows-0.1.0.json; installed model/Office, update preservation and the complete feedback-fix-release-update loop remain unverified.",
+    "Actual 0.1.1 app-button installation and scoped retention were verified, with one additional ordinary restart needed to display existing data. Automatic first-launch display, sample registration, live display, model memory saving and file-tree behavior have observed defects. Installed Office preview and the complete feedback-fix-release-update loop remain incomplete.",
     "Earlier native UI and browser-binding failures retain their failed historical outcomes; later actual installed UI and browser-feedback observations passed within their stated scope.",
     "No company mail, DRM, model or cookie skill was accessed."
   ],
@@ -1013,5 +1014,45 @@
     "saveOnlyForBitboomThorMainPush": true,
     "existingGateCommandsAndDependenciesUnchanged": true,
     "performanceBenefitMeasured": false
+  },
+  "initialPublishedWindowsEvidence": "public-windows-0.1.0.json",
+  "latestPublishedWindowsEvidenceSection": "publishedWindows011",
+  "publishedWindows011": {
+    "version": "0.1.1",
+    "sourceSha": "200c3fb1e85643a43b65a14850ec112b39096c8e",
+    "releaseUrl": "https://github.com/bitboom/thor/releases/tag/v0.1.1",
+    "releaseId": 426876715,
+    "buildWorkflowRunId": 40703739643,
+    "publishWorkflowRunId": 40720326888,
+    "allFivePublicAssetsEqualVerifiedCiBytes": true,
+    "installerBytes": 229655867,
+    "installerSha256": "cf9af3cb098f63583b91488986e1ec14fd4d1686a95a7141d45f1d50a55cd338",
+    "authenticodeStatus": "NotSigned",
+    "installedComponentBytesVerified": true,
+    "actualAppCheckDownloadInstallAndAutomaticRelaunch": true,
+    "actualAboutAndWindowsVersion": "0.1.1",
+    "nineSyntheticFilesPreserved": true,
+    "memoryFileScope": "CLI-created baseline file preserved; not a successful model memory save.",
+    "originalSyntheticDatabaseRecordsRetained": true,
+    "additionalOrdinaryRestartRequired": true,
+    "projectThreeConversationsAnswersSettingsAndRegisteredMcpVisibleAfterRestart": true,
+    "automaticFirstLaunchDisplay": "FAIL; cause and active first-launch data directory unconfirmed.",
+    "automaticFirstLaunchIssue": "https://github.com/bitboom/thor/issues/8",
+    "issue8CreatedByApiNotAppFeedback": true,
+    "sampleButtonVisible": true,
+    "sampleButtonRegistration": "FAIL; fabricated unsaved server id causes status persistence against a nonexistent row.",
+    "freshRealProtocolContractProof": "Published 0.1.0 Core, whose relevant route is unchanged in 0.1.1: fake id HTTP500; no id HTTP200 and six tools; imported real id HTTP200 with persisted status/tools. Rebuilt 0.1.1 Core not executed by this probe.",
+    "sampleIssueStillOpen": "https://github.com/bitboom/thor/issues/7",
+    "installedCorrectionAndFullLoopPassed": false,
+    "privateEvidenceSha256": {
+      "thor-v011-published-verification.json": "f0f27031cfb297c7134a3ac4e26525c4b428a097f28e670935aeed37e9892f08",
+      "thor-v011-installed-files-verification.json": "f3a0f6481a6d257bb43fdc36174973948db2f7b72cddf23948522faf48e36b59",
+      "thor-v011-installed-ui-update-evidence.json": "99eefd4624aee5bf13c8db35d9b23430f79a0054c4c6368c06771e1502f77435",
+      "thor-v011-file-preservation.json": "6b16f89cd564935852782b2637fa5cd751e2a020696127303205ee4f943ef5a0",
+      "thor-v011-preexisting-conversation-records.json": "2a46ffef6bacdbae8084fb90627ee52b1906f0e0a4c6017959862789aad21119",
+      "thor-v011-normal-startup-projection.json": "99a970527fa156932ed7b02e0509d3b379618f18b95abbfdee52969d7f8cf34c",
+      "thor-sample-mail-contract-v1/receipt.json": "d7b1ca8329d24674f0c85a69986f30481cfb171f93339cb0526758f9f319e49a"
+    },
+    "privacy": "Synthetic observations and hashes only; no machine paths, credentials, environment values, raw logs or company data."
   }
 }

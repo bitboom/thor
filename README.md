@@ -4,7 +4,7 @@ Thor is a Windows desktop workspace for office tasks, built from AionUi with rep
 
 The desktop, application host, and agent adapters have separate ownership. The first local runtime is Codex; an existing enterprise Claude wrapper can be configured later without changing the desktop.
 
-This repository is under active implementation. The [0.1.0 unsigned Windows preview](https://github.com/bitboom/thor/releases/tag/v0.1.0) has passed public-asset, installed-component, visible-window and browser-feedback checks. Installed model tasks, Office preview and update preservation remain unverified. The missing sample-mail action is tracked in [issue #7](https://github.com/bitboom/thor/issues/7). See [current verification status](docs/verification/implementation-status.md) for the exact scope; 0.1.1 is a candidate until its own release and installed checks pass.
+This repository is under active implementation. The [0.1.1 unsigned Windows preview](https://github.com/bitboom/thor/releases/tag/v0.1.1) was installed through 0.1.0's update buttons. The checked synthetic files and project/history/settings/MCP data were retained, but the first automatic relaunch showed empty state until one ordinary restart ([issue #8](https://github.com/bitboom/thor/issues/8)). The sample-mail button now appears but registration still fails ([issue #7](https://github.com/bitboom/thor/issues/7)). Live response display, model memory saving and the file tree also have observed defects; installed Office preview remains unverified. See [current verification status](docs/verification/implementation-status.md) for the exact scope. Candidate corrections require their own CI, release and installed checks.
 
 ## Layout
 

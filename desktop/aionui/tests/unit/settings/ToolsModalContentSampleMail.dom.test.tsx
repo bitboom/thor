@@ -153,11 +153,21 @@ describe('Tools settings sample mail registration', () => {
         },
       })
     );
+    expect(hooks.testConnection.mock.calls[0][0]).not.toHaveProperty('id');
+    expect(hooks.testConnection.mock.calls[0][0]).not.toHaveProperty('created_at');
     expect(hooks.success).toHaveBeenCalledWith('settings.thorSample.success');
   });
 
   it('does not import when the protocol lacks a required tool', async () => {
-    hooks.testConnection.mockResolvedValue({ success: true, tools: [] });
+    hooks.testConnection.mockResolvedValue({ success: true, tools: toolNames.slice(0, -1).map((name) => ({ name })) });
+    render(<ToolsModalContent />);
+    fireEvent.click(screen.getByRole('button', { name: 'settings.thorSample.add' }));
+    await waitFor(() => expect(hooks.error).toHaveBeenCalledWith('settings.thorSample.failed'));
+    expect(hooks.batchImport).not.toHaveBeenCalled();
+  });
+
+  it('does not import when the connection test rejects', async () => {
+    hooks.testConnection.mockRejectedValue(new Error('synthetic failure'));
     render(<ToolsModalContent />);
     fireEvent.click(screen.getByRole('button', { name: 'settings.thorSample.add' }));
     await waitFor(() => expect(hooks.error).toHaveBeenCalledWith('settings.thorSample.failed'));

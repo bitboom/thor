@@ -63,13 +63,14 @@ const AcpChat: React.FC<{
   forkCapability,
   promptCapability,
 }) => {
-  useMessageLstCache(conversation_id);
+  const reloadMessages = useMessageLstCache(conversation_id);
   usePendingConfirmationsRecovery(conversation_id);
   usePlanRecovery(conversation_id);
   const teamPermission = useTeamPermission();
   const messageState = useAcpMessage(conversation_id, {
     skipWarmup: Boolean(teamPermission),
     prepareRuntime: teamPermission?.warmupSession,
+    onRecovery: reloadMessages,
   });
 
   return (

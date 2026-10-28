@@ -36,6 +36,7 @@ vi.mock('@/renderer/utils/emitter', () => ({ addEventListener: () => () => {} })
 
 import {
   reconcileGeneratingFromRuntime,
+  clearGeneratingAfterRecovery,
   useConversationListSync,
 } from '@/renderer/pages/conversation/GroupedHistory/hooks/useConversationListSync';
 
@@ -62,6 +63,18 @@ describe('reconcileGeneratingFromRuntime', () => {
 
     expect(result.current.isConversationGenerating('conv-b')).toBe(true);
     expect(result.current.isConversationGenerating('conv-c')).toBe(false);
+  });
+
+  it('clears a spinner after a guarded fresh idle recovery', () => {
+    const { result } = renderHook(() => useConversationListSync());
+    act(() => {
+      reconcileGeneratingFromRuntime('conv-recovered', true);
+    });
+    expect(result.current.isConversationGenerating('conv-recovered')).toBe(true);
+    act(() => {
+      clearGeneratingAfterRecovery('conv-recovered');
+    });
+    expect(result.current.isConversationGenerating('conv-recovered')).toBe(false);
   });
 
   it('leaves the generating state unchanged when isProcessing is false', () => {

@@ -22,6 +22,27 @@ fn child(root: &Path, relative: &str) -> Option<PathBuf> {
     Some(root.join(path))
 }
 
+/// The pinned Node CLI entrypoint loader rejects a Windows verbatim script path before
+/// memory.mjs can run. Simplify only a safely representable script argument;
+/// keep the executable, resource validation and workspace identity unchanged.
+fn node_script_argument(script: &Path) -> Option<&str> {
+    let script = dunce::simplified(script);
+    #[cfg(windows)]
+    if matches!(
+        script.components().next(),
+        Some(Component::Prefix(prefix))
+            if matches!(prefix.kind(), std::path::Prefix::VerbatimDisk(_)
+                | std::path::Prefix::VerbatimUNC(_, _)
+                | std::path::Prefix::Verbatim(_)
+                | std::path::Prefix::DeviceNS(_))
+    ) {
+        // Do not strip prefixes from long, reserved-name or UNC verbatim paths:
+        // changing their spelling could change which file the agent executes.
+        return None;
+    }
+    script.to_str()
+}
+
 fn policy(bundle: &Path, workspace: &str) -> Option<String> {
     let cli = bundle.join("thor-agent").join("tools").join("memory.mjs");
     let store = bundle.join("thor-agent").join("memory-store.mjs");
@@ -38,8 +59,15 @@ fn policy(bundle: &Path, workspace: &str) -> Option<String> {
     if !node.is_file() {
         return None;
     }
+    let Some(script) = node_script_argument(&cli) else {
+        tracing::warn!(
+            backend = "codex",
+            "project memory policy unavailable: bundled script path is not Node CLI compatible"
+        );
+        return None;
+    };
     tracing::info!(backend = "codex", "project memory policy enabled");
-    let argv = serde_json::json!([node.to_string_lossy(), cli.to_string_lossy(), "--workspace", workspace]);
+    let argv = serde_json::json!([node.to_string_lossy(), script, "--workspace", workspace]);
     Some(format!(
         "Thor project memory\n\
          This conversation has project-owned persistent memory in THOR_MEMORY.md at the workspace root. \
@@ -104,5 +132,115 @@ mod tests {
         assert!(child(root, "/private").is_none());
         assert!(child(root, "").is_none());
         assert_eq!(child(root, "node/runtime"), Some(root.join("node/runtime")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn node_script_argument_simplifies_only_safe_drive_paths() {
+        assert_eq!(
+            node_script_argument(Path::new(r"\\?\C:\Thor fixture\한글\memory.mjs")),
+            Some(r"C:\Thor fixture\한글\memory.mjs")
+        );
+        for ordinary in [r"C:\Thor fixture\memory.mjs", r"\\synthetic-server\share\memory.mjs"] {
+            assert_eq!(node_script_argument(Path::new(ordinary)), Some(ordinary));
+        }
+        for unsafe_verbatim in [
+            r"\\?\UNC\synthetic-server\share\memory.mjs",
+            r"\\?\C:\reserved\COM1\memory.mjs",
+            r"\\?\C:\trailing.\memory.mjs",
+            r"\\?\C:\literal\..\memory.mjs",
+            r"\\.\synthetic-device\memory.mjs",
+        ] {
+            assert_eq!(node_script_argument(Path::new(unsafe_verbatim)), None);
+        }
+        let long = format!(r"\\?\C:\{}\memory.mjs", "segment\\".repeat(40));
+        assert_eq!(node_script_argument(Path::new(&long)), None);
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn emitted_windows_policy_loads_real_memory_cli_and_retains_workspace_guard() {
+        let temporary = tempfile::tempdir().unwrap();
+        let ordinary_root = dunce::canonicalize(temporary.path()).unwrap();
+        let verbatim_root = std::fs::canonicalize(&ordinary_root).unwrap();
+        assert!(verbatim_root.to_str().unwrap().starts_with(r"\\?\"));
+        std::fs::create_dir_all(ordinary_root.join("thor-agent/tools")).unwrap();
+        std::fs::create_dir_all(ordinary_root.join("node/runtime")).unwrap();
+        let workspace = ordinary_root.join("synthetic-workspace");
+        std::fs::create_dir(&workspace).unwrap();
+        std::fs::write(
+            ordinary_root.join("thor-agent/tools/memory.mjs"),
+            include_str!("../../../../../agent/tools/memory.mjs"),
+        )
+        .unwrap();
+        std::fs::write(
+            ordinary_root.join("thor-agent/memory-store.mjs"),
+            include_str!("../../../../../agent/memory-store.mjs"),
+        )
+        .unwrap();
+        let node =
+            aionui_runtime::resolve_command_path("node").expect("Windows tests require the configured Node runtime");
+        std::fs::copy(node, ordinary_root.join("node/runtime/node.exe")).unwrap();
+        std::fs::write(
+            ordinary_root.join("manifest.json"),
+            r#"{"schemaVersion":2,"node":{"root":"node/runtime","executable":"node.exe"}}"#,
+        )
+        .unwrap();
+        let text = policy(&verbatim_root, workspace.to_str().unwrap()).unwrap();
+        let line = text
+            .lines()
+            .find_map(|line| line.strip_prefix("Use the following argv prefix with the existing shell tool: "))
+            .unwrap();
+        let argv: Vec<String> = serde_json::from_str(line).unwrap();
+        assert_eq!(argv[0], verbatim_root.join("node/runtime/node.exe").to_str().unwrap());
+        assert_eq!(
+            argv[1],
+            ordinary_root
+                .join("thor-agent")
+                .join("tools")
+                .join("memory.mjs")
+                .to_str()
+                .unwrap()
+        );
+        assert_eq!(argv[3], workspace.to_str().unwrap());
+        let run_list = |workspace: &str| {
+            let mut command = aionui_runtime::Builder::clean_cli(&argv[0]);
+            command.args([argv[1].as_str(), "--workspace", workspace, "--action", "list"]);
+            command.current_dir(&ordinary_root);
+            command
+        };
+        let output = tokio::time::timeout(std::time::Duration::from_secs(10), run_list(&argv[3]).output())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "the emitted script argument must load before memory CLI execution"
+        );
+        let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(result["entries"], serde_json::json!([]));
+        let verbatim_workspace = std::fs::canonicalize(&workspace).unwrap();
+        let rejected_text = policy(&verbatim_root, verbatim_workspace.to_str().unwrap()).unwrap();
+        let rejected_argv: Vec<String> = serde_json::from_str(
+            rejected_text
+                .lines()
+                .find_map(|line| line.strip_prefix("Use the following argv prefix with the existing shell tool: "))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            rejected_argv[3],
+            verbatim_workspace.to_str().unwrap(),
+            "workspace identity must not be normalized"
+        );
+        let rejected = tokio::time::timeout(std::time::Duration::from_secs(10), run_list(&rejected_argv[3]).output())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!rejected.status.success());
+        let failure: serde_json::Value = serde_json::from_slice(&rejected.stderr).unwrap();
+        assert_eq!(failure["error"]["code"], "UNSAFE_PATH");
+        assert!(!workspace.join("THOR_MEMORY.md").exists());
+        assert!(!workspace.join(".THOR_MEMORY.lock").exists());
     }
 }

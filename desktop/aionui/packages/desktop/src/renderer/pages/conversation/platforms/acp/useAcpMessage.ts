@@ -13,6 +13,11 @@ import type { IResponseMessage } from '@/common/adapter/ipcBridge';
 import type { TokenUsageBreakdown, TokenUsageData } from '@/common/config/storage';
 import { useMergeLiveMessage } from '@/renderer/pages/conversation/Messages/hooks';
 import { logStreamTerminalObserved } from '@/renderer/pages/conversation/runtime/useConversationRuntimeView';
+import { clearGeneratingAfterRecovery } from '@/renderer/pages/conversation/GroupedHistory/hooks/useConversationListSync';
+import {
+  getConversationRuntimeViewSnapshot,
+  hydrateSucceeded,
+} from '@/renderer/pages/conversation/runtime/conversationRuntimeViewStore';
 import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
 import { isConversationProcessing } from '@/renderer/pages/conversation/utils/conversationRuntime';
 import { beginConversationTurn, endConversationTurn } from '@/renderer/pages/conversation/utils/conversationTurnClock';
@@ -102,7 +107,11 @@ function fetchAcpSlashCommands(conversation_id: string): Promise<SlashCommandIte
 
 export const useAcpMessage = (
   conversation_id: string,
-  options?: { skipWarmup?: boolean; prepareRuntime?: () => Promise<void> }
+  options?: {
+    skipWarmup?: boolean;
+    prepareRuntime?: () => Promise<void>;
+    onRecovery?: (isCurrent: () => boolean) => Promise<unknown> | void;
+  }
 ): UseAcpMessageReturn => {
   const mergeLiveMessage = useMergeLiveMessage();
   const [running, setRunning] = useState(false);
@@ -123,6 +132,7 @@ export const useAcpMessage = (
   const [slashCommands, setSlashCommands] = useState<SlashCommandItem[]>([]);
 
   // Use refs to sync state for immediate access in event handlers
+  const recoveryRevisionRef = useRef(0);
   const runningRef = useRef(running);
   const aiProcessingRef = useRef(aiProcessing);
 
@@ -240,6 +250,7 @@ export const useAcpMessage = (
     (action) => {
       const next = typeof action === 'function' ? action(aiProcessingRef.current) : action;
       if (next) {
+        recoveryRevisionRef.current++;
         setTurnStartedAtMs(beginConversationTurn(conversation_id));
       } else {
         endConversationTurn(conversation_id);
@@ -256,6 +267,8 @@ export const useAcpMessage = (
       if (conversation_id !== message.conversation_id) {
         return;
       }
+
+      recoveryRevisionRef.current++;
 
       if (message.type === 'skill_suggest' || message.type === 'cron_trigger') {
         return;
@@ -366,6 +379,10 @@ export const useAcpMessage = (
             setAiProcessing(false);
             aiProcessingRef.current = false;
             markTurnEnded();
+            const finishRevision = recoveryRevisionRef.current;
+            void Promise.resolve()
+              .then(() => options?.onRecovery?.(() => finishRevision === recoveryRevisionRef.current))
+              .catch((error) => console.warn('[useAcpMessage] Message recovery failed:', error));
             setThought({ subject: '', description: '' });
             hasContentInTurnRef.current = false;
             hasThinkingMessageRef.current = false;
@@ -577,12 +594,83 @@ export const useAcpMessage = (
       setRunning,
       setAiProcessing,
       setAcpStatus,
+      options?.onRecovery,
     ]
   );
 
   useEffect(() => {
     return ipcBridge.acpConversation.responseStream.on(handleResponseMessage);
   }, [handleResponseMessage]);
+
+  // Reconcile lost stream events against a fresh runtime snapshot. The revision
+  // and runtime-view identity prevent an older response from ending a newer turn.
+  useEffect(() => {
+    if (!conversation_id || !hasHydratedRunningState) return;
+    let disposed = false;
+    let inFlight = false;
+    const reconcile = async () => {
+      if (inFlight) return;
+      const view = getConversationRuntimeViewSnapshot(conversation_id);
+      if (view.localSubmitting) return;
+      const revision = recoveryRevisionRef.current;
+      inFlight = true;
+      try {
+        const conversation = await getConversationOrNull(conversation_id);
+        const runtime = conversation?.runtime;
+        if (
+          disposed ||
+          revision !== recoveryRevisionRef.current ||
+          view !== getConversationRuntimeViewSnapshot(conversation_id) ||
+          !runtime ||
+          runtime.state !== 'idle' ||
+          runtime.is_processing !== false ||
+          runtime.can_send_message !== true
+        )
+          return;
+        let committedView: ReturnType<typeof getConversationRuntimeViewSnapshot> | null = null;
+        await options?.onRecovery?.(
+          () =>
+            revision === recoveryRevisionRef.current &&
+            (committedView
+              ? committedView === getConversationRuntimeViewSnapshot(conversation_id)
+              : !disposed && view === getConversationRuntimeViewSnapshot(conversation_id))
+        );
+        if (
+          disposed ||
+          revision !== recoveryRevisionRef.current ||
+          view !== getConversationRuntimeViewSnapshot(conversation_id)
+        )
+          return;
+        hydrateSucceeded(conversation_id, runtime);
+        committedView = getConversationRuntimeViewSnapshot(conversation_id);
+        clearGeneratingAfterRecovery(conversation_id);
+        turnFinishedRef.current = true;
+        runningRef.current = false;
+        aiProcessingRef.current = false;
+        setRunning(false);
+        setAiProcessing(false);
+        markTurnEnded();
+        setThought({ subject: '', description: '' });
+        activeThinkingRef.current = null;
+        hasContentInTurnRef.current = false;
+        hasThinkingMessageRef.current = false;
+        setHasThinkingMessage(false);
+      } catch (error) {
+        console.warn('[useAcpMessage] Runtime recovery failed:', error);
+      } finally {
+        inFlight = false;
+      }
+    };
+    const timer =
+      running || aiProcessing ? setInterval(() => void reconcile(), 5000) : setTimeout(() => void reconcile(), 5000);
+    const unsubscribe = ipcBridge.realtime?.reconnected?.on(() => void reconcile());
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+      clearInterval(timer);
+      unsubscribe?.();
+    };
+  }, [conversation_id, running, aiProcessing, hasHydratedRunningState, markTurnEnded, options?.onRecovery]);
 
   // Reset state when conversation changes and restore actual running status
   useEffect(() => {

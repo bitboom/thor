@@ -1262,7 +1262,7 @@ export const mcpService = {
       wwwAuthenticate?: string;
       www_authenticate?: string;
     },
-    IMcpServer & { runtime_scope_id?: string }
+    Pick<IMcpServer, 'name' | 'transport'> & { id?: string; runtime_scope_id?: string }
   >('/api/mcp/test-connection'),
   checkOAuthStatus: httpPost<{ authenticated: boolean }, { server_url: string }>('/api/mcp/oauth/check-status'),
   loginMcpOAuth: httpPost<{ success: boolean; error?: string }, { server_url: string }>('/api/mcp/oauth/login'),

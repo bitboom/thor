@@ -156,12 +156,7 @@ const ModalMcpManagementSection: React.FC<{
         transport,
         original_json: JSON.stringify(transport),
       };
-      const tested = await mcpService.testMcpConnection.invoke({
-        ...entry,
-        id: 'thor-synthetic-test',
-        created_at: 0,
-        updated_at: 0,
-      });
+      const tested = await mcpService.testMcpConnection.invoke({ name: entry.name, transport });
       const expected = [
         'mail_search',
         'mail_read',

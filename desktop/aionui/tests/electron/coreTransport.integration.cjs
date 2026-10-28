@@ -45,6 +45,7 @@ app
     let outside;
     let devServer;
     const seen = [];
+    const websocketOrigins = [];
     try {
       devServer = http.createServer((_req, res) => {
         res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -95,7 +96,15 @@ app
       });
       wss = new WebSocketServer({ noServer: true });
       server.on('upgrade', (req, socket, head) => {
-        if (req.headers['x-thor-local-token'] !== token) return socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+        const requestOrigin = req.headers.origin;
+        const authorized = req.headers['x-thor-local-token'] === token;
+        const validOrigin =
+          !requestOrigin ||
+          requestOrigin === 'null' ||
+          requestOrigin === new URL(devUrl).origin ||
+          requestOrigin === `http://127.0.0.1:${server.address().port}`;
+        websocketOrigins.push({ origin: requestOrigin, authorized });
+        if (!authorized || !validOrigin) return socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
         wss.handleUpgrade(req, socket, head, (ws) => {
           ws.send('ok');
           ws.close();
@@ -125,7 +134,7 @@ app
         });
         if (d.url.startsWith(`http://127.0.0.1:${port}/`) || d.url.startsWith(`ws://127.0.0.1:${port}/`))
           seen.push({ method: d.method, resourceType: d.resourceType, hasFrame: !!d.frame, main, trusted });
-        cb({ requestHeaders: coreRequestHeaders(d.requestHeaders, { 'X-Thor-Local-Token': token }, trusted) });
+        cb({ requestHeaders: coreRequestHeaders(d.requestHeaders, { 'X-Thor-Local-Token': token }, trusted, d.url) });
       });
       await win.loadFile(page);
       const url = `http://127.0.0.1:${port}`;
@@ -140,6 +149,9 @@ app
       );
       const frameStatus = await win.webContents.executeJavaScript(
         `new Promise(resolve => { const iframe=document.createElement('iframe'); iframe.src=${JSON.stringify(pathToFileURL(frame).href)}; iframe.onload=()=>iframe.contentWindow.fetch(${JSON.stringify(url + '/iframe')}).then(r=>resolve(r.status)).catch(()=>resolve('error')); document.body.appendChild(iframe); })`
+      );
+      const foreignWsResult = await win.webContents.executeJavaScript(
+        `new Promise(resolve => {const child = document.querySelector('iframe').contentWindow; const ws = new child.WebSocket(${JSON.stringify('ws://127.0.0.1:' + port + '/ws')}); ws.onmessage=()=>resolve('unexpected'); ws.onerror=()=>resolve('error'); setTimeout(()=>resolve('timeout'),5000)})`
       );
       const guestStatus = await win.webContents.executeJavaScript(
         `new Promise(resolve => { const guest=document.createElement('webview'); guest.partition='thor-test-guest'; guest.src=${JSON.stringify(pathToFileURL(frame).href)}; guest.addEventListener('did-finish-load',()=>guest.executeJavaScript(${JSON.stringify(`fetch(${JSON.stringify(url + '/guest')}).then(r=>r.status).catch(()=> 'error')`)}).then(resolve).catch(()=>resolve('error')),{once:true}); document.body.appendChild(guest); setTimeout(()=>resolve('timeout'),5000); })`
@@ -167,6 +179,15 @@ app
       );
       assert.equal(httpStatus, 200, 'main frame HTTP');
       assert.equal(wsResult, 'ok', 'main frame WebSocket');
+      assert.equal(foreignWsResult, 'error', 'untrusted subframe WebSocket denied');
+      assert.ok(
+        websocketOrigins.some((entry) => entry.authorized && entry.origin === 'null'),
+        'trusted WS sends opaque null origin'
+      );
+      assert.ok(
+        websocketOrigins.some((entry) => !entry.authorized && entry.origin === 'file://'),
+        'untrusted WS retains its origin without a capability'
+      );
       assert.equal(postStatus, 200, 'JSON POST and its authenticated preflight');
       assert.equal(devPostStatus, 200, 'cross-origin dev JSON POST');
       assert.equal(frameStatus, 403, 'foreign subframe denied');

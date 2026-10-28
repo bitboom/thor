@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "version": "0.1.0",
+  "sourceSha": "f0423072995c69e38e1227a0c03b7ab29f5c6b83",
+  "scope": "Later synthetic checks of the installed public preview; complements public-windows-0.1.0.json, not evidence of an installed correction.",
+  "restart": {
+    "normalCloseAndRelaunch": true,
+    "forcedTerminationUsed": false,
+    "oldDesktopCoreAndCodexProcessesStopped": true,
+    "syntheticProjectConversationAndCanaryAnswerPreserved": true,
+    "modelLanguageAndConversationModePreserved": true,
+    "updatePerformed": false
+  },
+  "syntheticMcp": {
+    "registeredThroughInstalledUiJsonImport": true,
+    "sixDiscoveredToolsDisplayed": true,
+    "selectedThroughNewChatMcpCheckbox": true,
+    "actualCodexCalls": 10,
+    "successfulCalls": 8,
+    "expectedAccessDeniedCalls": 2,
+    "searchMessageReadAttachmentListAndPublicAttachmentReadPassed": true,
+    "blockedAttachmentAuthorizationAndReadDeniedWithoutBody": true,
+    "actualResultsDisplayedAfterRouteReentry": true,
+    "dedicatedSampleButtonFixVerified": false,
+    "selectionNote": "A prior conversation selected no MCP servers and correctly had no mail tools. Global connection success does not select a server for each conversation."
+  },
+  "remaining": {
+    "liveUi": "FAIL: persisted results appeared after route reentry; mounted chat/sidebar had stayed stale.",
+    "modelMemorySave": "FAIL: namespaced Node script argument caused EISDIR before the CLI loaded; reproduced with exact installed bytes in an isolated workspace.",
+    "fileTree": "FAIL: root only despite populated fixtures, refresh, expansion and restart.",
+    "officePreview": "NOT_RUN: six validated synthetic Office files were prepared but could not be opened from the empty file tree.",
+    "appButtonUpdateAndDataPreservation": "NOT_RUN"
+  },
+  "isolatedTransportControls": {
+    "publishedCoreAndCompiledRendererBaselineFailedBeforeOpen": true,
+    "trustedCapabilityAndFileOriginObserved": true,
+    "validTokenFileOriginHttpAndWsStatus": 403,
+    "validTokenNullOriginHttpStatus": 200,
+    "validTokenNullOriginWsStatus": 101,
+    "missingOrInvalidTokenWsStatus": 401,
+    "ownedProcessesAndPortCleaned": true,
+    "existingProfileOrCredentialsRead": false,
+    "candidateHeaderPolicyOpenedOriginalPackagedRendererSocket": true,
+    "candidateHeaderPolicyReceivedActualCoreFilesystemReply": true,
+    "originalDiagnosticRunPassed": false,
+    "originalDiagnosticFailure": "An unsupported heartbeat-timeout expectation failed; the original FAIL is preserved and Origin-only evidence is separately verified.",
+    "heartbeatTimeoutReproduced": false,
+    "candidateInstalledFixVerified": false
+  },
+  "privateEvidenceSha256": {
+    "thor-v010-restart-verification.json": "b9b8feec7ffc2e1ee10102ebef2b088f26e59e79fc0eb4a33d281bf4737fc227",
+    "thor-v010-installed-model-mcp-evidence.json": "73f35b3ce18a68a0db3b097378e80b4cc689e0d851cc001a13ababe404305770",
+    "thor-ws-native-origin-controls-v010/receipt.json": "4a40850793e3171ac372d9b8f1184023e3aa23cf06c5b78b7c4c417dae3c4a5d",
+    "thor-ws-origin-positive-evidence.json": "1bd5f8241fc771c2aeac16848ceee8c0ff70d548f89c758f55d3f83a0bb2a3e0"
+  },
+  "privacy": "Invented fixtures and sanitized observations/hashes only. No machine paths, account data, credentials, raw logs or company content. Synthetic access checks do not validate enterprise mail, DRM, authentication or model compatibility."
+}

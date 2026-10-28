@@ -16,6 +16,7 @@ import {
   sanitizeAcpToolCallContent,
 } from '@/common/chat/chatLib';
 import { useCallback, useEffect, useRef } from 'react';
+import { getConversationRuntimeViewSnapshot } from '@/renderer/pages/conversation/runtime/conversationRuntimeViewStore';
 import { createContext } from '@renderer/utils/ui/createContext';
 import {
   DEFAULT_MESSAGE_PAGE_LIMIT,
@@ -853,6 +854,13 @@ export const useReplaceWithAnchorWindow = () => {
   );
 };
 
+// A pending latest-page refresh must not replace a history window requested later.
+const historyRevisions = new Map<string, number>();
+const historyRevision = (id: string): number => historyRevisions.get(id) ?? 0;
+const beginHistoryRequest = (id: string): void => {
+  historyRevisions.set(id, historyRevision(id) + 1);
+};
+
 export const useLoadPreviousMessagePage = (conversationId?: string) => {
   const pagination = useMessagePaginationState();
   const setPagination = useUpdateMessagePaginationState();
@@ -863,6 +871,7 @@ export const useLoadPreviousMessagePage = (conversationId?: string) => {
       return false;
     }
 
+    beginHistoryRequest(conversationId);
     setPagination((current) => ({ ...current, isLoadingBefore: true }));
     try {
       const page = await loadConversationMessagePage(conversationId, {
@@ -904,6 +913,7 @@ export const useLoadAnchorMessageWindow = (conversationId?: string) => {
     async (messageId: string) => {
       if (!conversationId || !messageId) return false;
 
+      beginHistoryRequest(conversationId);
       setPagination((current) => ({ ...current, isLoadingAnchor: true }));
       try {
         const page = await loadConversationAnchorWindow(conversationId, messageId, {
@@ -932,37 +942,50 @@ export const useLoadAnchorMessageWindow = (conversationId?: string) => {
 
 export const useMessageLstCache = (key: string) => {
   const update = useUpdateMessageList();
-  const list = useMessageList();
   const setLoading = useUpdateMessageListLoading();
   const setPagination = useUpdateMessagePaginationState();
-  // Mirrors the current list into a ref so the turnCompleted handler below
-  // can inspect it synchronously without re-subscribing to the WS event on
-  // every list change (useState's functional updater runs asynchronously,
-  // so update((list) => ...) can't be used for a synchronous read here).
-  const listRef = useRef(list);
+  const mountGeneration = useRef(0);
+  const mounted = useRef(false);
   useEffect(() => {
-    listRef.current = list;
-  }, [list]);
-  const loadMessages = useCallback(async (): Promise<TMessage[]> => {
-    const result = await loadLatestConversationMessages(key, {
-      limit: DEFAULT_MESSAGE_PAGE_LIMIT,
-      contentMode: 'compact',
-    });
-    const messages = result?.items?.map(normalizeDbMessage);
-    if (messages && Array.isArray(messages)) {
-      update((currentList) => mergeLoadedPageWithCurrent(key, messages, currentList));
-      setPagination({
-        oldestCursor: result.oldest_cursor ?? undefined,
-        newestCursor: result.newest_cursor ?? undefined,
-        hasMoreBefore: result.has_more_before,
-        hasMoreAfter: result.has_more_after,
-        isLoadingBefore: false,
-        isLoadingAnchor: false,
+    mounted.current = true;
+    mountGeneration.current++;
+    return () => {
+      mounted.current = false;
+      mountGeneration.current++;
+    };
+  }, [key]);
+  const loadMessages = useCallback(
+    async (isCurrent: () => boolean = () => true): Promise<TMessage[]> => {
+      if (!mounted.current) return [];
+      const revision = historyRevision(key);
+      const generation = mountGeneration.current;
+      const valid = () =>
+        mounted.current && mountGeneration.current === generation && historyRevision(key) === revision && isCurrent();
+      const result = await loadLatestConversationMessages(key, {
+        limit: DEFAULT_MESSAGE_PAGE_LIMIT,
+        contentMode: 'compact',
       });
-      return messages;
-    }
-    return [];
-  }, [key, setPagination, update]);
+      const messages = result?.items?.map(normalizeDbMessage);
+      if (messages && Array.isArray(messages) && valid()) {
+        update((currentList) => (valid() ? mergeLoadedPageWithCurrent(key, messages, currentList) : currentList));
+        setPagination((current) =>
+          valid()
+            ? {
+                oldestCursor: result.oldest_cursor ?? undefined,
+                newestCursor: result.newest_cursor ?? undefined,
+                hasMoreBefore: result.has_more_before,
+                hasMoreAfter: result.has_more_after,
+                isLoadingBefore: false,
+                isLoadingAnchor: false,
+              }
+            : current
+        );
+        return messages;
+      }
+      return [];
+    },
+    [key, setPagination, update]
+  );
 
   useEffect(() => {
     if (!key) return;
@@ -1042,31 +1065,25 @@ export const useMessageLstCache = (key: string) => {
       return;
     }
 
-    // Reconciliation backstop at every turn boundary. The live statusChanged
-    // flip above is best-effort — a live window can miss the event (codex
-    // ack-timeout, a WS gap, or a row left orphaned by a server restart) and
-    // then never self-heal because the conversation stays mounted and never
-    // reloads. The DB row is the authoritative source of truth, so once a
-    // turn for this conversation finishes we re-pull the latest page if (and
-    // only if) a right-position text message is still showing 'pending' —
-    // loadMessages's merge (preferPersistedOrLiveMessage) lets DB truth win
-    // without disturbing anything else in the list.
+    // A completed turn can have persisted output missed by the live stream.
     return ipcBridge.conversation.turnCompleted.on((payload) => {
-      if (payload.session_id !== key) {
-        return;
-      }
-
-      const hasPendingDelivery = listRef.current.some(
-        (message) => message.type === 'text' && message.position === 'right' && message.status === 'pending'
-      );
-
-      if (hasPendingDelivery) {
-        void loadMessages().catch((error) => {
-          console.error('[useMessageLstCache] Failed to reconcile pending messages after turn completion:', error);
+      if (payload.session_id !== key) return;
+      // Other completion listeners update the runtime view synchronously; take
+      // the snapshot after they finish, then reject a later turn or unmount.
+      void Promise.resolve()
+        .then(() => {
+          const view = getConversationRuntimeViewSnapshot(key);
+          if (view.localSubmitting || (view.activeTurnId && payload.turn_id && view.activeTurnId !== payload.turn_id))
+            return;
+          return loadMessages(() => view === getConversationRuntimeViewSnapshot(key));
+        })
+        .catch((error) => {
+          console.error('[useMessageLstCache] Failed to reconcile messages after turn completion:', error);
         });
-      }
     });
   }, [key, loadMessages]);
+
+  return loadMessages;
 };
 
 export const beforeUpdateMessageList = (fn: (list: TMessage[]) => TMessage[]) => {
