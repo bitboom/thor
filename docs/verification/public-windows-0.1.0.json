@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "version": "0.1.0",
+  "sourceSha": "f0423072995c69e38e1227a0c03b7ab29f5c6b83",
+  "sourceSha256": "01b22d2005eb8ba2a1f12b3d9e9585b184a4317107b2d38400545bd5431309b0",
+  "scope": "Sanitized owner-observed public release, installed component files, visible UI and browser-feedback success path. Not complete installed-product acceptance or evidence for the 0.1.1 candidate.",
+  "release": {
+    "id": 426700948,
+    "url": "https://github.com/bitboom/thor/releases/tag/v0.1.0",
+    "buildRunUrl": "https://github.com/bitboom/thor/actions/runs/40627602249/attempts/2",
+    "buildArtifactId": 12794739696,
+    "publishRunUrl": "https://github.com/bitboom/thor/actions/runs/40696135005",
+    "tagPointsToTestedSource": true,
+    "allFivePublishedAssetsEqualVerifiedCiBytes": true,
+    "installerFile": "Thor-0.1.0-win-x64.exe",
+    "installerSize": 229666721,
+    "installerSha256": "f07673273dab42efdf605e0f7b96ba15eaf45bc552259d2edf44e2147d270848",
+    "actualAuthenticodeStatus": "NotSigned",
+    "trustedPublisherVerified": false
+  },
+  "installation": {
+    "ordinaryUserInstallerExitCode": 0,
+    "hkcuRegisteredVersion": "0.1.0",
+    "installLocationFieldPresent": false,
+    "installDirectorySource": "HKCU registration DisplayIcon parent; exact actual executable path checked locally and omitted here.",
+    "coreNodeOfficeGithubCliAndNoticesMatchProvenance": true,
+    "completeManagedResourcesDigestMatches": true,
+    "nativeAddonHashesAndSetMatch": true,
+    "thorExecutableVersionMetadataMatches": true,
+    "installedNativeSmokeScope": "CI dependency-installed Electron native-module smoke; distinct from read-only installed-file checks and visible-window observations."
+  },
+  "installedUi": {
+    "thorReadyMainWindowObserved": true,
+    "codexConnectionButtonPassed": true,
+    "codexConnectionCheckIncludesModelPrompt": false,
+    "sampleMailRegistration": "FAIL: expected action absent from Settings > Tools in 0.1.0",
+    "defectIssueUrl": "https://github.com/bitboom/thor/issues/7",
+    "defectFixedInInstalledApp": false
+  },
+  "feedback": {
+    "reviewedTitleAndBodyInInstalledApp": true,
+    "appOpenedGithubDraftInExistingSignedInBrowser": true,
+    "browserSubmissionCreatedIssue": true,
+    "createdByApi": false,
+    "issueUrl": "https://github.com/bitboom/thor/issues/7",
+    "apiReadbackConfirmed": true,
+    "installedAppVerifyButtonConfirmedSameIssueUrl": true,
+    "successPathPassed": true,
+    "offline403RateLimitAndRestartRecoveryTested": false
+  },
+  "remaining": {
+    "installedModelMcpConversation": false,
+    "installedOfficePreview": false,
+    "projectRestartPersistence": false,
+    "appButtonUpdateToNextRelease": false,
+    "projectSettingsMemoryAndExtensionUpdatePreservation": false,
+    "completeFeedbackFixReleaseUpdateLoop": false,
+    "enterpriseAuthenticationMailDrmAndModelCompatibility": false
+  },
+  "privateEvidenceSha256": {
+    "thor-v010-published-verification.json": "90be4b6b60f874751aa2555569929435e1a3cdb783d95b1a2fb60351e20fcc1e",
+    "thor-v010-installed-files-verification.json": "5e01e8df35de1c3898b9e5c6700f087d586a49f42b70e18dfd3dbd4cc82d60ea",
+    "thor-v010-installed-ui-feedback-evidence.json": "480d88a8f0c29d15f18c5db20a4db0fcf2552086265b960316ec8e99fd5d9a60",
+    "thor-v010-feedback-issue7-api.json": "878c76e82cbbcea8ca6f466ec1d3def3ff6552354167aa5e89a0c72eb79fead8"
+  },
+  "privacy": "Only sanitized facts, public repository URLs and evidence digests are included; no personal installation paths, accounts, credentials, company data or raw logs."
+}

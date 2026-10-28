@@ -2,6 +2,8 @@
 * text=auto eol=lf
 *.patch text eol=lf
 *.json text eol=lf
+# The first reviewed request is a CRLF Git blob; preserve its exact bytes on checkout.
+release/release-request.json -text
 *.yml text eol=lf
 *.yaml text eol=lf
 *.mjs text eol=lf

@@ -1,7 +1,9 @@
 {
   "schemaVersion": 1,
   "recordedAt": "2026-10-28T03:30:46Z",
-  "data": "synthetic-only",
+  "data": "Synthetic task fixtures and sanitized public release/install/UI observations; no private workspace content.",
+  "latestPublishedWindowsEvidence": "public-windows-0.1.0.json",
+  "installedObservationScope": "0.1.0 installed files, ready window, Codex connection button and browser-feedback success path passed; full installed-product acceptance remains incomplete.",
   "installedDesktopVerified": false,
   "managedTreeRepairVerification": {
     "baseCommit": "cc72a507802a314fc684c240b1f5267ccb877653",
@@ -168,8 +170,8 @@
     }
   },
   "limitations": [
-    "No installed-app UI, automatic update, app feedback issue or release-loop acceptance yet.",
-    "Native UI helper currently returns codex app-server exited before returning response; Chrome binding returns Debugger unattached.",
+    "0.1.0 installed-window and browser-feedback success observations are recorded in public-windows-0.1.0.json; installed model/Office, update preservation and the complete feedback-fix-release-update loop remain unverified.",
+    "Earlier native UI and browser-binding failures retain their failed historical outcomes; later actual installed UI and browser-feedback observations passed within their stated scope.",
     "No company mail, DRM, model or cookie skill was accessed."
   ],
   "notificationAndPreviewVerification": {

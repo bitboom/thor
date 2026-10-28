@@ -9,7 +9,7 @@ import { removeImageGenerationEnvKeys, resolveImageGenerationMcpEnv } from '@/co
 import { mcpService } from '@/common/adapter/ipcBridge';
 import { type IMcpServer, BUILTIN_IMAGE_GEN_ID, BUILTIN_IMAGE_GEN_NAME } from '@/common/config/storage';
 import { isImageGenSupported } from '@/common/utils/imageModelAllowlist';
-import { Divider, Form, Tooltip, Message, Modal, Switch } from '@arco-design/web-react';
+import { Button, Divider, Form, Tooltip, Message, Modal, Switch } from '@arco-design/web-react';
 import { Help } from '@icon-park/react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -139,6 +139,49 @@ const ModalMcpManagementSection: React.FC<{
     [handleBatchImportMcpServers, handleTestMcpConnections]
   );
 
+  const [settingUpSample, setSettingUpSample] = useState(false);
+  const sampleExists = mcpServers.some((server) => server.name === 'thor_synthetic_mail');
+  const setupSample = async () => {
+    const getConfig = window.electronAPI?.getThorSyntheticMailConfig;
+    if (!getConfig || sampleExists) return;
+    setSettingUpSample(true);
+    try {
+      const { command, script } = await getConfig();
+      const transport = { type: 'stdio' as const, command, args: [script], env: { ELECTRON_RUN_AS_NODE: '1' } };
+      const entry = {
+        name: 'thor_synthetic_mail',
+        description: 'Synthetic example mail; no real account',
+        enabled: true,
+        builtin: false,
+        transport,
+        original_json: JSON.stringify(transport),
+      };
+      const tested = await mcpService.testMcpConnection.invoke({
+        ...entry,
+        id: 'thor-synthetic-test',
+        created_at: 0,
+        updated_at: 0,
+      });
+      const expected = [
+        'mail_search',
+        'mail_read',
+        'mail_list_attachments',
+        'mail_authorize_attachment',
+        'mail_read_attachment',
+        'mail_reset_session',
+      ];
+      if (!tested.success || !expected.every((name) => tested.tools?.some((tool) => tool.name === name)))
+        throw new Error('Synthetic MCP test failed');
+      const added = await handleBatchImportMcpServers([entry]);
+      if (added.length !== 1) throw new Error('Synthetic MCP import failed');
+      message.success(t('settings.thorSample.success'));
+    } catch {
+      message.error(t('settings.thorSample.failed'));
+    } finally {
+      setSettingUpSample(false);
+    }
+  };
+
   const [importMode, setImportMode] = useState<'json' | 'oneclick'>('json');
 
   useEffect(() => {
@@ -193,6 +236,16 @@ const ModalMcpManagementSection: React.FC<{
         <div>{renderAddButton()}</div>
       </div>
 
+      {window.electronAPI?.getThorSyntheticMailConfig && (
+        <div className='flex flex-col gap-8px mb-16px'>
+          <div>{t('settings.thorSample.description')}</div>
+          <div>
+            <Button loading={settingUpSample} disabled={sampleExists} onClick={() => void setupSample()}>
+              {sampleExists ? t('settings.thorSample.added') : t('settings.thorSample.add')}
+            </Button>
+          </div>
+        </div>
+      )}
       <div className='flex-1 min-h-0'>
         {visibleMcpServers.length === 0 && extensionMcpServers.length === 0 ? (
           <div className='py-24px text-center text-t-secondary text-14px border border-dashed border-border-2 rd-12px'>
