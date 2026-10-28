@@ -62,7 +62,7 @@ test('clean CI materializes Electron before reading its distribution notices', t
   const artifact = path.join(directory, 'artifact-fixture.mjs');
   writeFileSync(artifact, `export const root=${JSON.stringify(directory)};
 export function readJson(file){return file.endsWith('bundle-provenance.json')?{core:{file:'core',sha256:'a'},node:{file:'node',sha256:'a'},officeCli:{file:'office',sha256:'a'},managedResourcesSha256:'b'}:{version:'0.1.0'};}
-export const describeFile=()=>({sha256:'a'}),treeDigest=()=> 'b',digest=()=> '',readUpdateManifest=()=>({}),validateUpdateManifest=()=>{},validateBundleProvenance=()=>{},verifyRelease=()=>{};
+export const describeFile=()=>({sha256:'a'}),treeDigest=()=> 'b',digest=()=> '',completeUpdateManifestSize=()=>{},validateBundleProvenance=()=>{},verifyRelease=()=>{};
 `);
   const stage = path.join(directory, 'stage-fixture.mjs');
   writeFileSync(stage, `import{readdirSync,readFileSync,writeFileSync}from'node:fs';import path from'node:path';

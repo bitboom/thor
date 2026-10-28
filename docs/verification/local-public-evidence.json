@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-10-28T01:30:00Z",
+  "recordedAt": "2026-10-28T03:30:46Z",
   "data": "synthetic-only",
   "installedDesktopVerified": false,
   "managedTreeRepairVerification": {
@@ -730,10 +730,10 @@
     "scope": "Historical local source-repair checks on d2 before CI11. At that point packaged proof and fixed-Core P11 remained pending; both later passed on the CI12 diagnostic candidate, whose overall workflow failed at installer signature status."
   },
   "latestWindowsAttempt": {
-    "sourceSha": "10495f93871a84220735e5eb4dc83e48da833836",
-    "runId": 40605485330,
+    "sourceSha": "4fad15aa9361aa6a92312c38341bc66340f935f4",
+    "runId": 40616468862,
     "conclusion": "failure",
-    "evidenceKey": "ci12DiagnosticCoreAndInstallerSignatureFailure"
+    "evidenceKey": "ci13InstallerManifestFailure"
   },
   "ci11NativePreflightAndFixtureFailure": {
     "schemaVersion": 1,
@@ -894,7 +894,7 @@
   },
   "signatureQueryRepair": {
     "baseSourceSha": "10495f93871a84220735e5eb4dc83e48da833836",
-    "scope": "Uncommitted local release-pipeline and workflow changes after CI12; no changed historical CI12 result.",
+    "scope": "Historical local release-pipeline and workflow changes after CI12, subsequently included in CI13; no changed historical CI12 result.",
     "originalAutoloadFailureReproduced": true,
     "childPsModulePathRemovalCaseInsensitive": true,
     "systemPowerShellHostAndSecurityModule": true,
@@ -909,6 +909,107 @@
     "actualNextCiInstallerVerified": false,
     "proofSha256": "3c211bf70c05eb5334b0bf7c99eb9087cf7f79ad0a866af826c278c24484cc24",
     "diagnosisSha256": "e741cf42ada82e1441501345701b340db73f05dbe52656c9397157137168e91a",
-    "fixedEvidenceSha256": "df0e880d2f29ae73c8f6da3ee569b6f04eaf78c278841478028ce8c51d9724e8"
+    "fixedEvidenceSha256": "df0e880d2f29ae73c8f6da3ee569b6f04eaf78c278841478028ce8c51d9724e8",
+    "ci13SignatureGuardPassedByExecutionOrder": true
+  },
+  "ci13InstallerManifestFailure": {
+    "schemaVersion": 1,
+    "sourceSha": "4fad15aa9361aa6a92312c38341bc66340f935f4",
+    "runId": 40616468862,
+    "runUrl": "https://github.com/bitboom/thor/actions/runs/40616468862",
+    "conclusion": "failure",
+    "runtimeReleaseTests": {
+      "passed": 154,
+      "failed": 0,
+      "skipped": 0
+    },
+    "coreWorkspace": {
+      "passed": 9347,
+      "failed": 0,
+      "ignored": 53,
+      "resultGroups": 251
+    },
+    "explicitLocalChannelRerun": {
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "resultGroups": 3
+    },
+    "desktop": {
+      "passed": 5027,
+      "failed": 0,
+      "skipped": 6,
+      "filesPassed": 526,
+      "filesSkipped": 1
+    },
+    "packagedNativePassed": true,
+    "installerBuiltOnRunner": true,
+    "signatureGuardPassedByExecutionOrder": true,
+    "failure": "Installer size mismatch in update-manifest validation; manifest and provenance not published.",
+    "manifestVerified": false,
+    "installerRetained": false,
+    "releasePublished": false,
+    "installed": false,
+    "diagnosticArtifact": {
+      "id": 12786547747,
+      "archiveSize": 113540349,
+      "archiveSha256": "0de241d3d60e6b4d39b8e5cc465c6849b3986b55184afecdd648b79ecd2a5b9d",
+      "downloaded": false,
+      "newCoreProbeRun": false
+    },
+    "producerReproduction": {
+      "package": "app-builder-lib",
+      "version": "26.15.2",
+      "differentialPackage": false,
+      "syntheticFileSize": 45,
+      "fileExecuted": false,
+      "filesSizePresent": false,
+      "sha512FieldsPresent": true,
+      "strictValidatorRejectedMissingSize": true
+    },
+    "ci13P11Tested": false,
+    "installedDesktopVerified": false,
+    "releaseEligible": false,
+    "evidenceSha256": {
+      "thor-ci13-final-receipt.json": "725b332f14bb67f352f5f54637cb30a48395ac6b58a1af6e46fe8fc51be86f24",
+      "thor-ci13-packaging-failure.log": "f1e2f366ed32fc1e4ce636c0e3a336a63361a521282ac67c2999afd0587d0944",
+      "producer-evidence.json": "5e371206337db3df94b187fe90025ca9dd11850d98deaceb0ac22efc45fdc36f"
+    }
+  },
+  "manifestProducerRepair": {
+    "baseSourceSha": "4fad15aa9361aa6a92312c38341bc66340f935f4",
+    "scope": "Uncommitted local release and workflow changes after CI13; synthetic producer and fixture evidence only.",
+    "absentSizeCompletedOnlyAfterVersionPathAndBothSha512Checks": true,
+    "strictValidatorUnchanged": true,
+    "finalStrictRereadPassed": true,
+    "wrongExplicitSizeAndChangedBytesRejected": true,
+    "actualLockedProducerSyntheticFixturePassed": true,
+    "idempotent": true,
+    "syntheticInstallerExecuted": false,
+    "producerPreflightConfiguredAfterDesktopDependenciesBeforeNativeBuild": true,
+    "rootTests": {
+      "firstRunPassed": 168,
+      "firstRunFailed": 1,
+      "firstFailure": "A native-desktop test mock lacked a renamed export; fixture corrected.",
+      "finalPassed": 170,
+      "finalFailed": 0,
+      "finalSkipped": 0
+    },
+    "actualNextCiInstallerVerified": false,
+    "completeNextCiPassed": false,
+    "evidenceSha256": {
+      "repair-evidence.json": "3007095148346e32f7de5c3bb4b8c908f638db864a848c697818e920d1ff955e",
+      "thor-ci13-manifest-root-tests.log": "c375e556ab7ef783cbe9b9d89a8c0be37cb46a0b905853f7e119b0a274c48923",
+      "thor-ci13-manifest-root-tests-frozen.log": "0bc1ca2de43e90e64554b739da613376b1a3cc5c7c770f94ad18c17c382d3994"
+    }
+  },
+  "rustCacheWorkflowChange": {
+    "baseSourceSha": "4fad15aa9361aa6a92312c38341bc66340f935f4",
+    "scope": "Uncommitted local workflow change after CI13.",
+    "movedAfterRootTestsBeforeCoreFormatting": true,
+    "cacheOnFailure": true,
+    "saveOnlyForBitboomThorMainPush": true,
+    "existingGateCommandsAndDependenciesUnchanged": true,
+    "performanceBenefitMeasured": false
   }
 }

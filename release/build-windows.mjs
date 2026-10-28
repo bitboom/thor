@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { root, readJson, describeFile, digest, treeDigest, readUpdateManifest, validateUpdateManifest, validateBundleProvenance, verifyRelease } from './artifact-lib.mjs';
+import { root, readJson, describeFile, digest, treeDigest, completeUpdateManifestSize, validateBundleProvenance, verifyRelease } from './artifact-lib.mjs';
 import { stageResources, sourceProvenance } from './stage-resources.mjs';
 import { assertUnsignedInstaller } from './authenticode.mjs';
 
@@ -65,7 +65,7 @@ copyFileSync(path.join(staged.resources, 'THIRD_PARTY_NOTICES.txt'), path.join(o
 const name = `Thor-${pkg.version}-win-x64.exe`;
 const installer = readFileSync(path.join(output, name));
 assertUnsignedInstaller(path.join(output, name));
-validateUpdateManifest(readUpdateManifest(output), { version: pkg.version, installer });
+completeUpdateManifestSize(output, { version: pkg.version, installer });
 const names = [name, 'latest.yml', 'THIRD_PARTY_NOTICES.txt'];
 if (existsSync(path.join(output, `${name}.blockmap`))) names.push(`${name}.blockmap`);
 const provenance = {

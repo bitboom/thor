@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, statSync, lstatSync, realpathSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, lstatSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -75,6 +75,20 @@ export function validateUpdateManifest(metadata, { version, installer, tag = nul
 
 export function readUpdateManifest(output) {
   return yaml.load(readFileSync(path.join(output, 'latest.yml'), 'utf8'), { schema: yaml.JSON_SCHEMA });
+}
+
+export function completeUpdateManifestSize(output, options) {
+  const metadata = readUpdateManifest(output);
+  const files = metadata?.files;
+  // electron-builder omits size when NSIS differentialPackage is false. Add
+  // only that absent field after verifying the producer's names and hashes;
+  // an existing incorrect size must fail rather than be overwritten.
+  if (Array.isArray(files) && files.length === 1 && files[0] && typeof files[0] === 'object' && !Object.hasOwn(files[0], 'size')) {
+    const completed = { ...metadata, files: [{ ...files[0], size: options.installer.length }] };
+    validateUpdateManifest(completed, options);
+    writeFileSync(path.join(output, 'latest.yml'), yaml.dump(completed, { lineWidth: -1, noRefs: true }));
+  }
+  return validateUpdateManifest(readUpdateManifest(output), options);
 }
 
 export function validateBundleProvenance(bundle, upstream) {

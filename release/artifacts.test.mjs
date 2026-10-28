@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'js-yaml';
-import { root, readJson, digest, describeFile, safeRelativePath, safeManagedTreePath, treeDigest, validateUpdateManifest, verifyRelease } from './artifact-lib.mjs';
+import { root, readJson, digest, describeFile, safeRelativePath, safeManagedTreePath, treeDigest, readUpdateManifest, validateUpdateManifest, completeUpdateManifestSize, verifyRelease } from './artifact-lib.mjs';
 import { localBoundaryPolicy, requiredLocalBoundaryChecks } from './local-boundary-policy.mjs';
 import { nativeDesktopPolicy, nativeDesktopElectron, nativeDesktopAbi, sqliteNativeFile } from './native-policy.mjs';
 
@@ -61,6 +61,69 @@ test('managed digest rejects an ordinary file as its root', t => {
 test('accepts matching updater bytes and exact release version', () => {
   assert.equal(validateUpdateManifest(metadata(), { version, installer, tag: `v${version}` }), file);
 });
+
+test('completes only a missing producer size before final strict verification', t => {
+  const output = mkdtempSync(path.join(tmpdir(), 'thor-update-size-'));
+  t.after(() => rmSync(output, { recursive: true, force: true }));
+  const value = metadata();
+  delete value.files[0].size;
+  value.releaseDate = '2026-10-28T00:00:00.000Z';
+  value.releaseNotes = 'Synthetic notes preserved.';
+  writeFileSync(path.join(output, 'latest.yml'), yaml.dump(value));
+  assert.throws(() => validateUpdateManifest(readUpdateManifest(output), { version, installer }), /size mismatch/);
+  assert.equal(completeUpdateManifestSize(output, { version, installer, tag: `v${version}` }), file);
+  assert.deepEqual(readUpdateManifest(output), { ...value, files: [{ ...value.files[0], size: installer.length }] });
+  const completedBytes = readFileSync(path.join(output, 'latest.yml'));
+  completeUpdateManifestSize(output, { version, installer });
+  assert.deepEqual(readFileSync(path.join(output, 'latest.yml')), completedBytes, 'A complete manifest must not be rewritten.');
+});
+
+test('does not complete missing size for changed installer bytes', t => {
+  const output = mkdtempSync(path.join(tmpdir(), 'thor-update-changed-bytes-'));
+  t.after(() => rmSync(output, { recursive: true, force: true }));
+  const value = metadata();
+  delete value.files[0].size;
+  const before = yaml.dump(value);
+  writeFileSync(path.join(output, 'latest.yml'), before);
+  const changed = Buffer.from(installer);
+  changed[changed.length - 1] ^= 1;
+  assert.throws(() => completeUpdateManifestSize(output, { version, installer: changed }), /SHA512/);
+  assert.equal(readFileSync(path.join(output, 'latest.yml'), 'utf8'), before);
+});
+
+for (const size of [0, -1, installer.length + 1, null, String(installer.length), 1.5]) {
+  test(`rejects an existing incorrect producer size ${JSON.stringify(size)} without rewriting`, t => {
+    const output = mkdtempSync(path.join(tmpdir(), 'thor-update-bad-size-'));
+    t.after(() => rmSync(output, { recursive: true, force: true }));
+    const value = metadata();
+    value.files[0].size = size;
+    const before = yaml.dump(value);
+    writeFileSync(path.join(output, 'latest.yml'), before);
+    assert.throws(() => completeUpdateManifestSize(output, { version, installer }), /size mismatch/);
+    assert.equal(readFileSync(path.join(output, 'latest.yml'), 'utf8'), before);
+  });
+}
+
+for (const [name, mutate] of [
+  ['version', value => value.version = '0.1.1'],
+  ['URL', value => value.files[0].url = `../${file}`],
+  ['legacy path', value => value.path = 'Other.exe'],
+  ['file hash', value => value.files[0].sha512 = 'tampered'],
+  ['legacy hash', value => value.sha512 = 'tampered'],
+  ['extra file', value => value.files.push({ ...value.files[0] })],
+]) {
+  test(`does not complete missing size when producer ${name} is invalid`, t => {
+    const output = mkdtempSync(path.join(tmpdir(), 'thor-update-bad-metadata-'));
+    t.after(() => rmSync(output, { recursive: true, force: true }));
+    const value = metadata();
+    delete value.files[0].size;
+    mutate(value);
+    const before = yaml.dump(value);
+    writeFileSync(path.join(output, 'latest.yml'), before);
+    assert.throws(() => completeUpdateManifestSize(output, { version, installer }));
+    assert.equal(readFileSync(path.join(output, 'latest.yml'), 'utf8'), before);
+  });
+}
 
 for (const [name, mutate, expected] of [
   ['modified installer', value => value.files[0].sha512 = 'tampered', /SHA512/],
@@ -122,8 +185,25 @@ function releaseFixture(t) {
 test('verifies release checksums without rewriting them', t => {
   const fixture = releaseFixture(t);
   const before = readFileSync(path.join(fixture.output, 'SHA256SUMS.txt'));
-  assert.equal(fixture.verify().installer, file);
+  const checked = fixture.verify();
+  assert.equal(checked.installer, file);
+  assert.deepEqual(checked.files.toSorted(), [file, 'latest.yml', 'THIRD_PARTY_NOTICES.txt', 'thor-build.json', 'SHA256SUMS.txt'].toSorted());
   assert.deepEqual(readFileSync(path.join(fixture.output, 'SHA256SUMS.txt')), before);
+});
+
+test('accepts an optional blockmap only when its bytes are bound by provenance and checksums', t => {
+  const fixture = releaseFixture(t);
+  const blockmap = `${file}.blockmap`;
+  writeFileSync(path.join(fixture.output, blockmap), 'Synthetic optional blockmap.');
+  fixture.provenance.artifacts.push(describeFile(fixture.output, blockmap));
+  fixture.provenance.artifacts.sort((a, b) => a.file.localeCompare(b.file, 'en'));
+  fixture.write();
+  const names = [...fixture.provenance.artifacts.map(record => record.file), 'thor-build.json'].sort();
+  writeFileSync(path.join(fixture.output, 'SHA256SUMS.txt'), names.map(name => `${describeFile(fixture.output, name).sha256}  ${name}`).join('\n') + '\n');
+  assert.equal(fixture.verify().files.length, 6);
+  assert.ok(fixture.verify().files.includes(blockmap));
+  writeFileSync(path.join(fixture.output, blockmap), 'Tampered optional blockmap.');
+  assert.throws(fixture.verify, /Artifact hash or size mismatch/);
 });
 
 test('rejects altered installer bytes after metadata generation', t => {

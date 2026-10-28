@@ -55,6 +55,8 @@ jobs:
       - name: Install locked desktop dependencies
         working-directory: desktop/aionui
         run: bun install --frozen-lockfile
+      - name: Verify updater manifest producer integration
+        run: node release/update-manifest.mjs --preflight
       - name: Verify Electron native build and persistence
         run: node release/native-desktop.mjs rebuild
   windows:
@@ -88,11 +90,6 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: amd64
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: host/aioncore -> target
-          shared-key: thor-windows-x64-msvc-full-v1-${{ hashFiles('release/build-host.mjs') }}
-          cache-on-failure: false
       - name: Install locked release dependencies
         run: npm ci --ignore-scripts
       - name: Check package, tag and upstream versions
@@ -102,6 +99,12 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Test runtime contracts and release rejection paths
         run: npm test
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host/aioncore -> target
+          shared-key: thor-windows-x64-msvc-full-v1-${{ hashFiles('release/build-host.mjs') }}
+          cache-on-failure: true
+          save-if: ${{ github.repository == 'bitboom/thor' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - name: Check Core formatting
         working-directory: host/aioncore
         run: |
