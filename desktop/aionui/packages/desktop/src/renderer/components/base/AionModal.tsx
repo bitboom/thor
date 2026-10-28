@@ -207,7 +207,7 @@ const AionModal: React.FC<AionModalProps> = ({
   ...props
 }) => {
   const isStandard = variant === 'standard';
-  const { fontScale } = useThemeContext();
+  const fontScale = useThemeContext(true)?.fontScale ?? 1;
   const { t } = useTranslation();
   // standard 变体默认给内容区标准内边距（上下20/左右24）；当调用方显式传入
   // contentStyle.padding（如团队创建的通栏双栏传 0）时，交由调用方自行处理内边距。

@@ -375,7 +375,7 @@ describe('getInstallationIntegrityModalActions', () => {
     const actions = getInstallationIntegrityModalActions(t, { onReportDiagnostics });
 
     expect(actions.downloadText).toBe('common.backendStartup.incompleteInstallation.downloadLatest');
-    expect(actions.reportText).toBe('common.backendStartup.incompleteInstallation.sendDiagnostics');
+    expect(actions.reportText).toBe('settings.thorFeedback.title');
 
     actions.onReportDiagnostics();
     expect(onReportDiagnostics).toHaveBeenCalledOnce();
@@ -393,7 +393,7 @@ describe('getInstallationIntegrityModalActions', () => {
       diagnosticsKind: 'data_migration',
     } as any);
 
-    expect(actions.reportText).toBe('common.backendStartup.dataMigration.sendDiagnostics');
+    expect(actions.reportText).toBe('settings.thorFeedback.title');
     expect(actions.downloadText).toBeUndefined();
     expect(failure.backendBoundaryStage).toBe('database.migration');
   });
@@ -422,7 +422,7 @@ describe('getInstallationIntegrityModalActions', () => {
       diagnosticsKind: 'local_data_repair',
     } as any);
 
-    expect(actions.reportText).toBe('common.backendStartup.localDataRepair.sendDiagnostics');
+    expect(actions.reportText).toBe('settings.thorFeedback.title');
     expect(actions.downloadText).toBeUndefined();
   });
 
@@ -433,7 +433,7 @@ describe('getInstallationIntegrityModalActions', () => {
       diagnosticsKind: 'startup_directory',
     } as any);
 
-    expect(actions.reportText).toBe('common.backendStartup.startupDirectory.sendDiagnostics');
+    expect(actions.reportText).toBe('settings.thorFeedback.title');
     expect(actions.downloadText).toBeUndefined();
   });
 
@@ -446,7 +446,7 @@ describe('getInstallationIntegrityModalActions', () => {
       onRecoverCorruptedDatabase,
     } as any);
 
-    expect(actions.reportText).toBe('common.backendStartup.recoverableDatabaseCorruption.sendDiagnostics');
+    expect(actions.reportText).toBe('settings.thorFeedback.title');
     expect(actions.downloadText).toBeUndefined();
     expect((actions as any).recoverText).toBe('common.backendStartup.recoverableDatabaseCorruption.confirmRebuild');
     (actions as any).onRecoverCorruptedDatabase();

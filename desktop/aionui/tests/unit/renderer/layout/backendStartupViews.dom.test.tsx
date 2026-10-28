@@ -72,7 +72,7 @@ describe('AC-5: backend_exited honest-failure wiring', () => {
     expect(getInstallationIntegrityTitle(echoT, 'backend_exited')).toBe('common.backendStartup.exited.title');
 
     const actions = getInstallationIntegrityModalActions(echoT, { diagnosticsKind: 'backend_exited' });
-    expect(actions.reportText).toBe('common.backendStartup.exited.sendDiagnostics');
+    expect(actions.reportText).toBe('settings.thorFeedback.title');
     // No download / reinstall button for a process that was proven to exist.
     expect(actions.downloadText).toBeUndefined();
     expect(actions.recoverText).toBeUndefined();
@@ -101,7 +101,7 @@ describe('port_report_timeout and startup_failed dialog wiring (Sentry 136646113
     );
 
     const actions = getInstallationIntegrityModalActions(echoT, { diagnosticsKind: 'port_report_timeout' });
-    expect(actions.reportText).toBe('common.backendStartup.portReportTimeout.sendDiagnostics');
+    expect(actions.reportText).toBe('settings.thorFeedback.title');
     expect(actions.downloadText).toBeUndefined();
     expect(actions.recoverText).toBeUndefined();
   });
@@ -113,7 +113,7 @@ describe('port_report_timeout and startup_failed dialog wiring (Sentry 136646113
     );
 
     const actions = getInstallationIntegrityModalActions(echoT, { diagnosticsKind: 'startup_failed' });
-    expect(actions.reportText).toBe('common.backendStartup.startupFailed.sendDiagnostics');
+    expect(actions.reportText).toBe('settings.thorFeedback.title');
     expect(actions.downloadText).toBeUndefined();
     expect(actions.recoverText).toBeUndefined();
   });

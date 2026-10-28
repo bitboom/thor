@@ -79,10 +79,12 @@ export const ThemeProvider: React.FC<PropsWithChildren> = ({ children }) => {
   );
 };
 
-export const useThemeContext = () => {
+export function useThemeContext(): ThemeContextValue;
+export function useThemeContext(optional: true): ThemeContextValue | null;
+export function useThemeContext(optional = false): ThemeContextValue | null {
   const context = useContext(ThemeContext);
-  if (!context) {
+  if (!context && !optional) {
     throw new Error('useThemeContext must be used within ThemeProvider');
   }
   return context;
-};
+}

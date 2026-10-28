@@ -1,7 +1,7 @@
 {
   "name": "thor-workspace",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "license": "Apache-2.0",
   "scripts": {
     "test": "node --test tests/runtime/*.test.mjs tests/office/*.test.mjs release/*.test.mjs release/bootstrap/*.test.mjs release/control/*.test.mjs",

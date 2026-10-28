@@ -5,7 +5,8 @@
  */
 
 import { Modal } from '@arco-design/web-react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -43,7 +44,9 @@ vi.mock('@/renderer/services/feedback/submitFeedbackReport', () => ({
 import {
   type InstallationIntegrityDiagnostics,
   InstallationIntegrityFooter,
+  InstallationIntegrityModalHost,
 } from '@/renderer/components/layout/InstallationIntegrityDialog';
+import BackendStartupGate from '@/renderer/components/layout/BackendStartupGate';
 
 const diagnostics: InstallationIntegrityDiagnostics = { source: 'backend_startup_failure' };
 
@@ -70,8 +73,80 @@ beforeEach(() => {
   };
 });
 
+describe('startup failure feedback', () => {
+  it('opens a reviewable draft without exposing arbitrary startup details or submitting', async () => {
+    const submit = vi.fn();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Core unavailable'));
+    window.__backendStartupFailure = { reason: 'backend_startup_exited' };
+    (window as unknown as { electronAPI: unknown }).electronAPI = {
+      submitThorFeedback: submit,
+      getThorFeedbackPending: async () => null,
+    };
+    const user = userEvent.setup();
+    render(
+      <BackendStartupGate
+        renderStarting={() => null}
+        renderApp={() => <div>Unexpected application</div>}
+        renderFailure={() => (
+          <InstallationIntegrityModalHost
+            diagnosticsKind='backend_exited'
+            description='private path or token must not be included'
+            diagnostics={{ source: 'backend_startup_failure', backendStartupFailure: { secret: 'private-value' } }}
+          />
+        )}
+      />
+    );
+    await user.click(await screen.findByTestId('installation-integrity-report'));
+    expect(await screen.findByLabelText('settings.thorFeedback.titleLabel')).toHaveValue(
+      'common.backendStartup.exited.title'
+    );
+    expect(screen.getByLabelText('settings.thorFeedback.description')).toHaveValue(
+      'common.backendStartup.exited.description'
+    );
+    await user.click(screen.getByText('settings.thorFeedback.review'));
+    const preview = screen.getByTestId('thor-feedback-preview').textContent ?? '';
+    expect(preview).not.toContain('private');
+    expect(submit).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    await user.click(screen.getByText('settings.thorFeedback.submit'));
+    await waitFor(() => expect(submit).toHaveBeenCalledOnce());
+  });
+
+  it('keeps an existing pending report instead of replacing it with the startup draft', async () => {
+    const submit = vi.fn();
+    (window as unknown as { electronAPI: unknown }).electronAPI = {
+      submitThorFeedback: submit,
+      getThorFeedbackPending: async () => ({
+        reportId: 'pending-report',
+        draft: { title: 'Earlier issue', body: 'Earlier report' },
+        state: 'pending',
+      }),
+    };
+    const user = userEvent.setup();
+    render(<InstallationIntegrityFooter diagnostics={diagnostics} diagnosticsKind='backend_exited' />);
+    await user.click(screen.getByTestId('installation-integrity-report'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('pending-report');
+    expect(screen.getByText(/Earlier issue/)).toBeInTheDocument();
+    expect(screen.queryByText('settings.thorFeedback.review')).not.toBeInTheDocument();
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it('does not show the new startup draft as an older pending report with no saved draft', async () => {
+    (window as unknown as { electronAPI: unknown }).electronAPI = {
+      getThorFeedbackPending: async () => ({ reportId: 'pending-report', draft: null, state: 'pending' }),
+    };
+    const user = userEvent.setup();
+    render(<InstallationIntegrityFooter diagnostics={diagnostics} diagnosticsKind='backend_exited' />);
+    await user.click(screen.getByTestId('installation-integrity-report'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('pending-report');
+    expect(screen.queryByText(/common.backendStartup.exited.description/)).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.thorFeedback.review')).not.toBeInTheDocument();
+  });
+});
+
 afterEach(() => {
   cleanup();
+  window.__backendStartupFailure = null;
   vi.restoreAllMocks();
 });
 

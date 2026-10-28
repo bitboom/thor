@@ -20,6 +20,8 @@ export type PrefilledScreenshot = { filename: string; data: Uint8Array; type: st
 type FeedbackReportModalProps = {
   visible: boolean;
   onCancel: () => void;
+  initialTitle?: string;
+  initialBody?: string;
   defaultModule?: string;
   prefilledScreenshots?: PrefilledScreenshot[];
   feedbackTags?: FeedbackEventTags;
@@ -31,10 +33,15 @@ type FeedbackReportModalProps = {
   };
 };
 
-const FeedbackReportModal: React.FC<FeedbackReportModalProps> = ({ visible, onCancel }) => {
+const FeedbackReportModal: React.FC<FeedbackReportModalProps> = ({
+  visible,
+  onCancel,
+  initialTitle = '',
+  initialBody = '',
+}) => {
   const { t } = useTranslation();
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
+  const [title, setTitle] = useState(initialTitle);
+  const [body, setBody] = useState(initialBody);
   const [review, setReview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -65,6 +72,9 @@ const FeedbackReportModal: React.FC<FeedbackReportModalProps> = ({ visible, onCa
     if (record.draft) {
       setTitle(record.draft.title);
       setBody(record.draft.body.replace(/\n\nThor report ID: [0-9a-f-]+$/i, ''));
+    } else {
+      setTitle('');
+      setBody('');
     }
     if (record.state === 'submitted' && record.url) {
       setPending(null);
@@ -87,7 +97,11 @@ const FeedbackReportModal: React.FC<FeedbackReportModalProps> = ({ visible, onCa
         if (active) restoreRecord(record);
       })
       .catch(() => {
-        if (active) setPending('unknown');
+        if (active) {
+          setTitle('');
+          setBody('');
+          setPending('unknown');
+        }
       });
     return () => {
       active = false;
