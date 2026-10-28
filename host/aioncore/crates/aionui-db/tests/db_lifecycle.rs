@@ -322,6 +322,25 @@ async fn creates_parent_directories() {
 
 // -- Legacy database copy --
 
+fn legacy_copy_fixture(path: &std::path::Path) {
+    let connection = rusqlite::Connection::open(path).unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE legacy_copy_fixture(id INTEGER PRIMARY KEY); INSERT INTO legacy_copy_fixture VALUES(1)",
+        )
+        .unwrap();
+    connection.close().unwrap();
+}
+
+fn assert_legacy_copy_fixture(path: &std::path::Path) {
+    let connection = rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM legacy_copy_fixture", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 1);
+    connection.close().unwrap();
+}
+
 #[test]
 fn copy_legacy_noop_when_no_legacy_db() {
     let dir = tempfile::tempdir().unwrap();
@@ -352,59 +371,49 @@ fn copy_legacy_copies_when_target_missing() {
     let target = dir.path().join("aionui-backend.db");
     let legacy = dir.path().join("aionui.db");
 
-    std::fs::write(&legacy, b"legacy database content").unwrap();
+    legacy_copy_fixture(&legacy);
+    let original = std::fs::read(&legacy).unwrap();
 
     maybe_copy_legacy_database(&target).unwrap();
 
     assert!(target.exists(), "target should be created");
-    let content = std::fs::read(&target).unwrap();
-    assert_eq!(content, b"legacy database content", "content should match legacy");
+    assert_legacy_copy_fixture(&target);
 
     let legacy_content = std::fs::read(&legacy).unwrap();
-    assert_eq!(
-        legacy_content, b"legacy database content",
-        "legacy must not be modified"
-    );
+    assert_eq!(legacy_content, original, "legacy must not be modified");
 }
 
 #[test]
-fn copy_legacy_removes_wal_sidecars() {
+fn copy_legacy_refuses_foreign_wal_sidecars() {
     let dir = tempfile::tempdir().unwrap();
     let target = dir.path().join("aionui-backend.db");
     let legacy = dir.path().join("aionui.db");
 
-    std::fs::write(&legacy, b"legacy data").unwrap();
+    legacy_copy_fixture(&legacy);
     std::fs::write(target.with_extension("db-wal"), b"wal").unwrap();
     std::fs::write(target.with_extension("db-shm"), b"shm").unwrap();
 
-    maybe_copy_legacy_database(&target).unwrap();
-
-    assert!(
-        !target.with_extension("db-wal").exists(),
-        "WAL sidecar should be removed"
-    );
-    assert!(
-        !target.with_extension("db-shm").exists(),
-        "SHM sidecar should be removed"
-    );
+    assert!(maybe_copy_legacy_database(&target).is_err());
+    assert!(!target.exists());
+    assert_eq!(std::fs::read(target.with_extension("db-wal")).unwrap(), b"wal");
+    assert_eq!(std::fs::read(target.with_extension("db-shm")).unwrap(), b"shm");
 }
 
 #[test]
-fn copy_legacy_overwrites_leftover_tmp() {
+fn copy_legacy_preserves_leftover_fixed_tmp() {
     let dir = tempfile::tempdir().unwrap();
     let target = dir.path().join("aionui-backend.db");
     let legacy = dir.path().join("aionui.db");
     let tmp = target.with_extension("db.tmp");
 
-    std::fs::write(&legacy, b"real data").unwrap();
+    legacy_copy_fixture(&legacy);
     std::fs::write(&tmp, b"leftover from crash").unwrap();
 
     maybe_copy_legacy_database(&target).unwrap();
 
     assert!(target.exists(), "target should be created");
-    assert!(!tmp.exists(), "tmp file should be cleaned up via rename");
-    let content = std::fs::read(&target).unwrap();
-    assert_eq!(content, b"real data");
+    assert_eq!(std::fs::read(tmp).unwrap(), b"leftover from crash");
+    assert_legacy_copy_fixture(&target);
 }
 
 #[tokio::test]
